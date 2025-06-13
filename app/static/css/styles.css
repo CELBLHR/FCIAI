@@ -1,0 +1,82 @@
+:root {
+    --primary-color: #00a8ff;
+    --secondary-color: #0097e6;
+    --text-color: #f5f6fa;
+    --bg-color: #2f3640;
+    --nav-bg-color: #353b48;
+    --brand-color: #00a8ff;
+    --hover-color: rgba(0, 168, 255, 0.1);
+    --active-color: rgba(0, 168, 255, 0.2);
+    --active-text-color: #00a8ff;
+    --error-color: #e84118;
+    --success-color: #4cd137;
+}
+
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    background-color: var(--bg-color);
+    color: var(--text-color);
+    line-height: 1.6;
+    padding-top: 60px;
+}
+
+.container {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 2rem;
+}
+
+h1 {
+    font-size: 2rem;
+    margin-bottom: 2rem;
+    color: var(--primary-color);
+}
+
+button {
+    background-color: var(--primary-color);
+    color: white;
+    border: none;
+    padding: 0.8rem 1.5rem;
+    border-radius: 5px;
+    cursor: pointer;
+    font-size: 1rem;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    transition: background-color 0.3s;
+}
+
+button:hover {
+    background-color: var(--secondary-color);
+}
+
+button:disabled {
+    background-color: #ccc;
+    cursor: not-allowed;
+}
+
+input[type="text"],
+input[type="file"] {
+    width: 100%;
+    padding: 0.8rem;
+    border: 1px solid rgba(0, 168, 255, 0.3);
+    border-radius: 5px;
+    background: rgba(0, 0, 0, 0.2);
+    color: var(--text-color);
+    font-size: 1rem;
+}
+
+input[type="text"]:focus {
+    outline: none;
+    border-color: var(--primary-color);
+}
+
+.hidden {
+    display: none !important;
+} 

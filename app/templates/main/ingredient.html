@@ -1,0 +1,58 @@
+{% extends "main/base_layout.html" %}
+
+{% block title %}保健食品成分搜索{% endblock %}
+
+{% block styles %}
+{{ super() }}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/ingredient.css') }}">
+<style>
+/* 页面标题样式 */
+.page-title {
+    color: #ffffff;
+    margin-bottom: 2rem;
+}
+
+/* 搜索容器样式 */
+.ingredient-container {
+    color: #ffffff;
+}
+
+/* 搜索输入框样式 */
+.search-input {
+    color: #ffffff;
+    background: rgba(255, 255, 255, 0.1);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.search-input::placeholder {
+    color: rgba(255, 255, 255, 0.6);
+}
+
+/* 搜索结果样式 */
+.search-results {
+    color: #ffffff;
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="ingredient-container">
+    <h1 class="page-title">保健食品成分搜索</h1>
+    
+    <div class="search-container">
+        <input type="text" id="searchInput" class="search-input" placeholder="请输入要查询的成分名称...">
+        <button type="button" class="search-btn" onclick="searchIngredient()">
+            <i class="fas fa-search"></i> 查询
+        </button>
+    </div>
+
+    <div id="searchResults" class="search-results">
+        <!-- 搜索结果将在这里动态显示 -->
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+{{ super() }}
+<script src="{{ url_for('static', filename='js/ingredient.js') }}"></script>
+{% endblock %} 

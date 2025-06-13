@@ -1,0 +1,325 @@
+{% extends "main/base_layout.html" %}
+
+{% block title %}注册审批{% endblock %}
+
+{% block styles %}
+<style>
+.approval-container {
+    max-width: 1000px;
+    margin: 0 auto;
+}
+
+.approval-header {
+    margin-bottom: 2rem;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.status-filter {
+    display: flex;
+    gap: 1rem;
+}
+
+.status-btn {
+    padding: 0.5rem 1rem;
+    border: none;
+    border-radius: 5px;
+    cursor: pointer;
+    background: rgba(0, 0, 0, 0.2);
+    color: var(--text-color);
+    transition: all 0.3s;
+}
+
+.status-btn.active {
+    background: var(--primary-color);
+    color: white;
+}
+
+.approval-table {
+    width: 100%;
+    border-collapse: collapse;
+    background: rgba(0, 0, 0, 0.2);
+    border-radius: 10px;
+    overflow: hidden;
+}
+
+.approval-table th,
+.approval-table td {
+    padding: 1rem;
+    text-align: left;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.approval-table th {
+    background: rgba(0, 0, 0, 0.3);
+    font-weight: bold;
+    color: var(--primary-color);
+}
+
+.approval-table tr:hover {
+    background: rgba(0, 168, 255, 0.1);
+}
+
+.status-badge {
+    padding: 0.3rem 0.8rem;
+    border-radius: 20px;
+    font-size: 0.9rem;
+}
+
+.status-pending {
+    background: rgba(255, 193, 7, 0.2);
+    color: #ffc107;
+}
+
+.status-approved {
+    background: rgba(40, 167, 69, 0.2);
+    color: #28a745;
+}
+
+.status-rejected {
+    background: rgba(220, 53, 69, 0.2);
+    color: #dc3545;
+}
+
+.action-btns {
+    display: flex;
+    gap: 0.5rem;
+}
+
+.action-btn {
+    padding: 0.5rem 1rem;
+    border: none;
+    border-radius: 5px;
+    cursor: pointer;
+    transition: all 0.3s;
+    display: flex;
+    align-items: center;
+    gap: 0.3rem;
+}
+
+.approve-btn {
+    background: rgba(40, 167, 69, 0.2);
+    color: #28a745;
+}
+
+.approve-btn:hover {
+    background: rgba(40, 167, 69, 0.3);
+}
+
+.reject-btn {
+    background: rgba(220, 53, 69, 0.2);
+    color: #dc3545;
+}
+
+.reject-btn:hover {
+    background: rgba(220, 53, 69, 0.3);
+}
+
+.disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+/* 分页样式 */
+.pagination {
+    margin-top: 2rem;
+    display: flex;
+    justify-content: center;
+    gap: 0.5rem;
+}
+
+.pagination button {
+    padding: 0.5rem 1rem;
+    border: none;
+    border-radius: 5px;
+    background: rgba(0, 0, 0, 0.2);
+    color: var(--text-color);
+    cursor: pointer;
+    transition: all 0.3s;
+}
+
+.pagination button:hover {
+    background: rgba(0, 168, 255, 0.1);
+}
+
+.pagination button.active {
+    background: var(--primary-color);
+    color: white;
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="approval-container">
+    <div class="approval-header">
+        <h1><i class="bi bi-person-check"></i> 注册审批</h1>
+        <div class="status-filter">
+            <button class="status-btn active" data-status="all">全部</button>
+            <button class="status-btn" data-status="pending">待审批</button>
+            <button class="status-btn" data-status="approved">已通过</button>
+            <button class="status-btn" data-status="rejected">已拒绝</button>
+        </div>
+    </div>
+
+    <table class="approval-table">
+        <thead>
+            <tr>
+                <th>用户名</th>
+                <th>注册时间</th>
+                <th>状态</th>
+                <th>审批人</th>
+                <th>审批时间</th>
+                <th>操作</th>
+            </tr>
+        </thead>
+        <tbody id="approvalList">
+            <!-- 数据将通过JavaScript动态添加 -->
+        </tbody>
+    </table>
+
+    <div id="pagination" class="pagination">
+        <!-- 分页将通过JavaScript动态添加 -->
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let currentStatus = 'all';
+let currentPage = 1;
+
+// 加载注册申请列表
+async function loadRegistrations(status = 'all', page = 1) {
+    try {
+        const response = await fetch(`/api/registrations?status=${status}&page=${page}`);
+        const data = await response.json();
+        
+        if (response.ok) {
+            const tbody = document.getElementById('approvalList');
+            tbody.innerHTML = data.registrations.map(reg => `
+                <tr>
+                    <td>${reg.username}</td>
+                    <td>${reg.register_time}</td>
+                    <td>
+                        <span class="status-badge status-${reg.status}">
+                            ${getStatusText(reg.status)}
+                        </span>
+                    </td>
+                    <td>${reg.approve_user || '-'}</td>
+                    <td>${reg.approve_time || '-'}</td>
+                    <td>
+                        <div class="action-btns">
+                            ${reg.status === 'pending' ? `
+                                <button class="action-btn approve-btn" onclick="approveRegistration(${reg.id})">
+                                    <i class="bi bi-check-lg"></i>
+                                    通过
+                                </button>
+                                <button class="action-btn reject-btn" onclick="rejectRegistration(${reg.id})">
+                                    <i class="bi bi-x-lg"></i>
+                                    拒绝
+                                </button>
+                            ` : '-'}
+                        </div>
+                    </td>
+                </tr>
+            `).join('');
+
+            // 更新分页
+            updatePagination(data.total_pages, page);
+        } else {
+            throw new Error(data.error || '加载失败');
+        }
+    } catch (error) {
+        showToast(error.message, 'error');
+    }
+}
+
+// 更新分页
+function updatePagination(totalPages, currentPage) {
+    const pagination = document.getElementById('pagination');
+    pagination.innerHTML = '';
+    
+    if (totalPages <= 1) return;
+    
+    for (let i = 1; i <= totalPages; i++) {
+        const button = document.createElement('button');
+        button.textContent = i;
+        button.className = i === currentPage ? 'active' : '';
+        button.onclick = () => {
+            currentPage = i;
+            loadRegistrations(currentStatus, i);
+        };
+        pagination.appendChild(button);
+    }
+}
+
+// 获取状态文本
+function getStatusText(status) {
+    const statusMap = {
+        'pending': '待审批',
+        'approved': '已通过',
+        'rejected': '已拒绝'
+    };
+    return statusMap[status] || status;
+}
+
+// 通过注册申请
+async function approveRegistration(id) {
+    if (!confirm('确定要通过这个注册申请吗？')) return;
+    
+    try {
+        const response = await fetch(`/api/registrations/${id}/approve`, {
+            method: 'POST'
+        });
+        
+        const data = await response.json();
+        
+        if (response.ok) {
+            showToast('审批成功', 'success');
+            loadRegistrations(currentStatus, currentPage);
+        } else {
+            throw new Error(data.error || '审批失败');
+        }
+    } catch (error) {
+        showToast(error.message, 'error');
+    }
+}
+
+// 拒绝注册申请
+async function rejectRegistration(id) {
+    if (!confirm('确定要拒绝这个注册申请吗？')) return;
+    
+    try {
+        const response = await fetch(`/api/registrations/${id}/reject`, {
+            method: 'POST'
+        });
+        
+        const data = await response.json();
+        
+        if (response.ok) {
+            showToast('已拒绝申请', 'success');
+            loadRegistrations(currentStatus, currentPage);
+        } else {
+            throw new Error(data.error || '操作失败');
+        }
+    } catch (error) {
+        showToast(error.message, 'error');
+    }
+}
+
+// 状态过滤按钮点击事件
+document.querySelectorAll('.status-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+        document.querySelectorAll('.status-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        currentStatus = btn.dataset.status;
+        currentPage = 1;
+        loadRegistrations(currentStatus, currentPage);
+    });
+});
+
+// 初始加载
+loadRegistrations();
+</script>
+{% endblock %} 

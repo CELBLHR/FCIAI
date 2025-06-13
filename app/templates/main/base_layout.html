@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}{% endblock %} - 翻译管理系统</title>
+    <!-- 基础样式 -->
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/nav.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/toast.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/user-info.css') }}">
+    <!-- Bootstrap Icons -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.7.2/font/bootstrap-icons.css">
+    {% block styles %}{% endblock %}
+</head>
+<body>
+    <nav class="nav-menu">
+        <div class="nav-container">
+            <a href="{{ url_for('main.index') }}" class="nav-brand">
+                <i class="bi bi-translate"></i>
+                翻译管理系统
+            </a>
+            <div class="nav-links">
+                <a href="{{ url_for('main.index') }}" class="nav-link {% if request.endpoint == 'main.index' %}active{% endif %}">
+                    <i class="bi bi-translate"></i>
+                    PPT翻译
+                </a>
+                <a href="{{ url_for('main.dictionary') }}" class="nav-link {% if request.endpoint == 'main.dictionary' %}active{% endif %}">
+                    <i class="bi bi-book"></i>
+                    词库管理
+                </a>
+                {# PDF注释链接暂时注释掉，因为路由可能有问题
+                <a href="{{ url_for('main.pdf_annotate') }}" class="nav-link {% if request.endpoint == 'main.pdf_annotate' %}active{% endif %}">
+                    <i class="bi bi-file-pdf"></i>
+                    PDF注释
+                </a>
+                #}
+                <a href="{{ url_for('main.ingredient') }}" class="nav-link {% if request.endpoint == 'main.ingredient' %}active{% endif %}">
+                    <i class="bi bi-search"></i>
+                    成分搜索
+                </a>
+                {% if current_user.is_authenticated %}
+                    {% if current_user.is_administrator() %}
+                        <a href="{{ url_for('main.registration_approval') }}" class="nav-link {% if request.endpoint == 'main.registration_approval' %}active{% endif %}">
+                            <i class="bi bi-person-check"></i>
+                            注册审批
+                        </a>
+
+                        {# 监控页面暂未实现
+                        <a href="{{ url_for('monitor.monitor_page') }}" class="nav-link {% if request.endpoint == 'monitor.monitor_page' %}active{% endif %}">
+                            <i class="bi bi-speedometer2"></i>
+                            系统监控
+                        </a>
+                        #}
+                        <a href="{{ url_for('main.logs') }}" class="nav-link {% if request.endpoint == 'main.logs' %}active{% endif %}">
+                            <i class="bi bi-journal-text"></i>
+                            日志管理
+                        </a>
+                    {% endif %}
+                    <a href="{{ url_for('auth.logout') }}" class="nav-link">
+                        <i class="bi bi-box-arrow-right"></i>
+                        退出
+                    </a>
+                {% else %}
+                    <a href="{{ url_for('auth.login') }}" class="nav-link">
+                        <i class="bi bi-box-arrow-in-right"></i>
+                        登录
+                    </a>
+                {% endif %}
+            </div>
+        </div>
+    </nav>
+
+    <div class="container">
+        {% block content %}{% endblock %}
+    </div>
+
+    <!-- 用户信息卡片 -->
+    {% if current_user.is_authenticated %}
+    <div id="user-info-card" class="user-info-card">
+        <div class="user-info-header">
+            <div class="user-avatar">
+                <i class="bi bi-person-circle"></i>
+            </div>
+            <div class="user-details">
+                <div class="user-name">{{ current_user.get_display_name() }}</div>
+                <div class="user-role">{{ current_user.role.name if current_user.role else '用户' }}</div>
+            </div>
+            <button class="user-info-toggle" onclick="toggleUserInfo()">
+                <i class="bi bi-chevron-up"></i>
+            </button>
+        </div>
+        <div class="user-info-body">
+            <div class="user-info-item">
+                <i class="bi bi-person"></i>
+                <span>用户名: {{ current_user.username }}</span>
+            </div>
+            {% if current_user.email %}
+            <div class="user-info-item">
+                <i class="bi bi-envelope"></i>
+                <span>邮箱: {{ current_user.email }}</span>
+            </div>
+            {% endif %}
+            {% if current_user.is_sso_user() %}
+            <div class="user-info-item">
+                <i class="bi bi-shield-check"></i>
+                <span>SSO用户 ({{ current_user.sso_provider }})</span>
+            </div>
+            {% endif %}
+            {% if current_user.last_login %}
+            <div class="user-info-item">
+                <i class="bi bi-clock"></i>
+                <span>上次登录: {{ current_user.last_login.strftime('%Y-%m-%d %H:%M') }}</span>
+            </div>
+            {% endif %}
+            <div class="user-info-actions">
+                {% if current_user.can_change_password() %}
+                <a href="#" class="user-action-btn" onclick="changePassword()">
+                    <i class="bi bi-key"></i> 修改密码
+                </a>
+                {% endif %}
+                <a href="{{ url_for('auth.logout') }}" class="user-action-btn logout-btn">
+                    <i class="bi bi-box-arrow-right"></i> 退出登录
+                </a>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- 提示消息容器 -->
+    <div id="toastContainer" class="toast-container"></div>
+
+    <!-- 基础脚本 -->
+    <script>
+    // 显示提示消息的函数
+    function showToast(message, type = 'success') {
+        const container = document.getElementById('toastContainer');
+        const toast = document.createElement('div');
+        toast.className = `toast ${type}`;
+        
+        const icon = document.createElement('i');
+        icon.className = type === 'success' ? 'bi bi-check-circle-fill' : 'bi bi-exclamation-circle-fill';
+        
+        toast.appendChild(icon);
+        toast.appendChild(document.createTextNode(message));
+        container.appendChild(toast);
+
+        // 3秒后自动移除
+        setTimeout(() => {
+            toast.remove();
+        }, 3000);
+    }
+
+    // 处理Flash消息
+    {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+            {% for category, message in messages %}
+                showToast('{{ message }}', '{{ category }}');
+            {% endfor %}
+        {% endif %}
+    {% endwith %}
+    </script>
+
+    <!-- 用户信息卡片脚本 -->
+    <script src="{{ url_for('static', filename='js/user-info.js') }}"></script>
+
+    {% block scripts %}{% endblock %}
+</body>
+</html>
