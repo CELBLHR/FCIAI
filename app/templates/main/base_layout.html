@@ -52,6 +52,10 @@
                             系统监控
                         </a>
                         #}
+                        <a href="{{ url_for('db_management.db_stats_page') }}" class="nav-link {% if request.endpoint == 'db_management.db_stats_page' %}active{% endif %}">
+                            <i class="bi bi-database"></i>
+                            数据库连接池
+                        </a>
                         <a href="{{ url_for('main.logs') }}" class="nav-link {% if request.endpoint == 'main.logs' %}active{% endif %}">
                             <i class="bi bi-journal-text"></i>
                             日志管理
@@ -161,6 +165,9 @@
     {% endwith %}
     </script>
 
+    <!-- 防抖动工具函数 -->
+    <script src="{{ url_for('static', filename='js/debounce.js') }}"></script>
+    
     <!-- 用户信息卡片脚本 -->
     <script src="{{ url_for('static', filename='js/user-info.js') }}"></script>
 

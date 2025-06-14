@@ -126,7 +126,7 @@ class PageBasedTranslator:
 
         for para in paragraphs:
             if para.is_translatable:
-                translatable_texts.append(para.text)
+                translatable_texts.append("【"+para.text+"】")
 
         # 用换行符连接所有段落
         combined_text = '\n'.join(translatable_texts)

@@ -4,9 +4,11 @@
 """
 import os
 import logging
+import platform
 import subprocess
 import tempfile
 import time
+import shutil
 from typing import Optional, Dict, Any
 
 try:
@@ -25,13 +27,18 @@ class LibreOfficeRenderTrigger:
     """LibreOffice渲染触发器"""
 
     def __init__(self):
+        """初始化LibreOffice渲染触发器"""
+        # 检查LibreOffice是否可用
         self.libreoffice_available = self._check_libreoffice()
+        
+        # 初始化统计信息
         self.stats = {
-            'autofit_set': 0,
-            'render_triggered': 0,
-            'pdf_generated': 0,
-            'pdf_deleted': 0,
-            'total_textboxes': 0
+            'total_textboxes': 0,  # 总文本框数
+            'autofit_set': 0,      # 设置了自适应的文本框数
+            'render_triggered': 0, # 触发渲染次数
+            'pdf_generated': 0,    # 生成的PDF文件数
+            'pdf_deleted': 0,      # 删除的PDF文件数
+            'pptx_generated': 0    # 生成的PPTX文件数
         }
 
     def _check_libreoffice(self) -> bool:
@@ -185,21 +192,23 @@ class LibreOfficeRenderTrigger:
             return False
 
     def _trigger_render_via_pdf_conversion(self, ppt_path: str) -> bool:
-        """通过PDF转换触发渲染"""
+        """通过ODP中转转换为PDF触发渲染"""
         try:
-            logger.info("步骤2: 通过LibreOffice PDF转换触发渲染")
+            logger.info("步骤2: 通过LibreOffice ODP中转转换为PDF触发渲染")
 
-            # 创建临时目录用于PDF输出
+            # 创建临时目录用于中间文件和PDF输出
             with tempfile.TemporaryDirectory() as temp_dir:
                 # 确保路径格式正确
                 temp_dir = os.path.abspath(temp_dir)
                 ppt_path = os.path.abspath(ppt_path)
+                ppt_filename = os.path.basename(ppt_path)
+                ppt_name = os.path.splitext(ppt_filename)[0]
 
                 logger.debug(f"输入文件: {ppt_path}")
                 logger.debug(f"输出目录: {temp_dir}")
 
-                # 构建LibreOffice转换命令
-                cmd = [
+                # 步骤2.1: 先转换为ODP格式
+                cmd_to_odp = [
                     self.libreoffice_cmd,
                     '--headless',           # 无头模式
                     '--invisible',          # 不可见
@@ -207,7 +216,7 @@ class LibreOfficeRenderTrigger:
                     '--nolockcheck',        # 不检查锁定
                     '--nologo',             # 不显示logo
                     '--norestore',          # 不恢复
-                    '--convert-to', 'pdf',  # 转换为PDF
+                    '--convert-to', 'odp',  # 转换为ODP
                     '--outdir', temp_dir,   # 输出目录
                     ppt_path                # 输入文件
                 ]
@@ -215,19 +224,12 @@ class LibreOfficeRenderTrigger:
                 # 在Windows下，如果路径包含空格，需要特殊处理
                 if platform.system() == "Windows":
                     # 对于Windows，确保路径被正确引用
-                    cmd_str = f'"{self.libreoffice_cmd}" --headless --invisible --nodefault --nolockcheck --nologo --norestore --convert-to pdf --outdir "{temp_dir}" "{ppt_path}"'
-                    logger.debug(f"Windows命令: {cmd_str}")
-                else:
-                    cmd_str = ' '.join(f'"{arg}"' if ' ' in arg else arg for arg in cmd)
-                    logger.debug(f"执行命令: {cmd_str}")
-
-                # 执行转换命令
-                start_time = time.time()
-
-                if platform.system() == "Windows":
+                    cmd_str_odp = f'"{self.libreoffice_cmd}" --headless --invisible --nodefault --nolockcheck --nologo --norestore --convert-to odp --outdir "{temp_dir}" "{ppt_path}"'
+                    logger.debug(f"Windows ODP转换命令: {cmd_str_odp}")
+                    
                     # Windows下使用shell=True执行命令字符串
-                    result = subprocess.run(
-                        cmd_str,
+                    result_odp = subprocess.run(
+                        cmd_str_odp,
                         shell=True,
                         capture_output=True,
                         text=True,
@@ -236,8 +238,69 @@ class LibreOfficeRenderTrigger:
                     )
                 else:
                     # Linux/macOS下使用列表形式
+                    logger.debug(f"执行ODP转换命令: {' '.join(cmd_to_odp)}")
+                    result_odp = subprocess.run(
+                        cmd_to_odp,
+                        capture_output=True,
+                        text=True,
+                        timeout=120,
+                        cwd=temp_dir
+                    )
+                
+                # 检查ODP转换是否成功
+                if result_odp.returncode != 0:
+                    logger.error(f"转换为ODP失败: {result_odp.stderr}")
+                    return False
+                
+                # 检查ODP文件是否生成
+                odp_file = os.path.join(temp_dir, f"{ppt_name}.odp")
+                if not os.path.exists(odp_file):
+                    logger.error("未能生成ODP文件")
+                    return False
+                
+                logger.info(f"成功转换为ODP格式: {odp_file}")
+
+                # 步骤2.2: 从ODP转换为PDF格式
+                cmd_to_pdf = [
+                    self.libreoffice_cmd,
+                    '--headless',           # 无头模式
+                    '--invisible',          # 不可见
+                    '--nodefault',          # 不使用默认设置
+                    '--nolockcheck',        # 不检查锁定
+                    '--nologo',             # 不显示logo
+                    '--norestore',          # 不恢复
+                    '--convert-to', 'pdf:writer_pdf_Export',  # 转换为PDF并指定导出过滤器
+                    '--outdir', temp_dir,   # 输出目录
+                    odp_file                # 输入文件
+                ]
+
+                # 在Windows下，如果路径包含空格，需要特殊处理
+                if platform.system() == "Windows":
+                    # 对于Windows，确保路径被正确引用
+                    cmd_str_pdf = f'"{self.libreoffice_cmd}" --headless --invisible --nodefault --nolockcheck --nologo --norestore --convert-to pdf:writer_pdf_Export --outdir "{temp_dir}" "{odp_file}"'
+                    logger.debug(f"Windows PDF转换命令: {cmd_str_pdf}")
+                    
+                    # 执行转换命令
+                    start_time = time.time()
+                    
+                    # Windows下使用shell=True执行命令字符串
                     result = subprocess.run(
-                        cmd,
+                        cmd_str_pdf,
+                        shell=True,
+                        capture_output=True,
+                        text=True,
+                        timeout=120,  # 2分钟超时
+                        cwd=temp_dir  # 设置工作目录
+                    )
+                else:
+                    # Linux/macOS下使用列表形式
+                    logger.debug(f"执行PDF转换命令: {' '.join(cmd_to_pdf)}")
+                    
+                    # 执行转换命令
+                    start_time = time.time()
+                    
+                    result = subprocess.run(
+                        cmd_to_pdf,
                         capture_output=True,
                         text=True,
                         timeout=120,
@@ -259,18 +322,25 @@ class LibreOfficeRenderTrigger:
                 if result.returncode == 0:
                     # 查找生成的PDF文件
                     try:
-                        pdf_files = [f for f in os.listdir(temp_dir) if f.endswith('.pdf')]
-
-                        if pdf_files:
-                            pdf_file = os.path.join(temp_dir, pdf_files[0])
+                        pdf_file = os.path.join(temp_dir, f"{ppt_name}.pdf")
+                        if os.path.exists(pdf_file):
                             pdf_size = os.path.getsize(pdf_file)
 
-                            logger.info(f"✅ PDF转换成功: {pdf_files[0]} ({pdf_size} bytes)")
+                            logger.info(f"✅ PDF转换成功: {os.path.basename(pdf_file)} ({pdf_size} bytes)")
                             logger.info("🎯 PPT已被LibreOffice完整渲染，文本框自适应设置已生效")
 
                             self.stats['render_triggered'] = 1
                             self.stats['pdf_generated'] = 1
                             self.stats['pdf_deleted'] = 1  # PDF在临时目录中会自动删除
+
+                            # 步骤2.3: 从ODP转换回PPTX格式
+                            logger.info("步骤2.3: 从ODP转换回PPTX格式并覆盖原文件")
+                            pptx_result = self._convert_odp_to_pptx(odp_file, temp_dir, ppt_path)
+                            if pptx_result:
+                                logger.info("✅ 完整渲染流程成功: ODP -> PDF -> PPTX")
+                                self.stats['pptx_generated'] = 1
+                            else:
+                                logger.warning("⚠️ PDF渲染成功，但PPTX转换失败")
 
                             return True
                         else:
@@ -297,6 +367,95 @@ class LibreOfficeRenderTrigger:
             logger.debug(f"详细错误: {traceback.format_exc()}")
             return False
 
+    def _convert_odp_to_pptx(self, odp_file: str, output_dir: str, original_pptx_path: str = None) -> str:
+        """
+        将ODP文件转换回PPTX格式
+        
+        Args:
+            odp_file: ODP文件路径
+            output_dir: 输出目录
+            original_pptx_path: 原始PPTX文件路径，如果提供则会覆盖该文件
+            
+        Returns:
+            str: 转换后的PPTX文件路径，失败则返回空字符串
+        """
+        try:
+            logger.info(f"将ODP转换回PPTX格式: {os.path.basename(odp_file)}")
+            
+            # 构建转换命令
+            cmd = [
+                self.libreoffice_cmd,
+                '--headless',
+                '--invisible',
+                '--nodefault',
+                '--nolockcheck',
+                '--nologo',
+                '--norestore',
+                '--convert-to', 'pptx:Impress MS PowerPoint 2007 XML',  # 显式指定导出格式
+                '--outdir', output_dir,
+                odp_file
+            ]
+            
+            # 在Windows下，如果路径包含空格，需要特殊处理
+            if platform.system() == "Windows":
+                cmd_str = f'"{self.libreoffice_cmd}" --headless --invisible --nodefault --nolockcheck --nologo --norestore --convert-to "pptx:Impress MS PowerPoint 2007 XML" --outdir "{output_dir}" "{odp_file}"'
+                logger.debug(f"Windows PPTX转换命令: {cmd_str}")
+                
+                # Windows下使用shell=True执行命令字符串
+                result = subprocess.run(
+                    cmd_str,
+                    shell=True,
+                    capture_output=True,
+                    text=True,
+                    timeout=120,
+                    cwd=output_dir
+                )
+            else:
+                # Linux/macOS下使用列表形式
+                logger.debug(f"执行PPTX转换命令: {' '.join(cmd)}")
+                result = subprocess.run(
+                    cmd,
+                    capture_output=True,
+                    text=True,
+                    timeout=120,
+                    cwd=output_dir
+                )
+            
+            if result.returncode == 0:
+                # 查找生成的PPTX文件
+                ppt_name = os.path.splitext(os.path.basename(odp_file))[0]
+                pptx_file = os.path.join(output_dir, f"{ppt_name}.pptx")
+                
+                if os.path.exists(pptx_file):
+                    logger.info(f"ODP成功转换为PPTX: {pptx_file}")
+                    
+                    # 如果提供了原始PPTX路径，则覆盖它
+                    if original_pptx_path:
+                        try:
+                            shutil.copyfile(pptx_file, original_pptx_path)
+                            logger.info(f"渲染后的PPTX已覆盖原文件: {original_pptx_path}")
+                            return original_pptx_path
+                        except Exception as e:
+                            logger.error(f"无法覆盖原PPTX文件: {e}")
+                            return pptx_file
+                    
+                    return pptx_file
+                else:
+                    logger.warning("PPTX转换命令成功但未找到PPTX文件")
+                    logger.debug(f"目录内容: {os.listdir(output_dir)}")
+                    return ""
+            else:
+                logger.error(f"PPTX转换失败，返回码: {result.returncode}")
+                if result.stderr:
+                    logger.error(f"错误信息: {result.stderr}")
+                return ""
+                
+        except Exception as e:
+            logger.error(f"ODP转换为PPTX出错: {e}")
+            import traceback
+            logger.debug(f"详细错误: {traceback.format_exc()}")
+            return ""
+
     def _log_stats(self):
         """输出统计信息"""
         logger.info("=" * 50)
@@ -313,9 +472,14 @@ class LibreOfficeRenderTrigger:
             logger.info(f"处理成功率: {success_rate:.1f}%")
 
     def get_stats(self) -> Dict[str, Any]:
-        """获取处理统计"""
+        """获取统计信息"""
         return {
-            **self.stats,
+            'total_textboxes': self.stats.get('total_textboxes', 0),
+            'autofit_set': self.stats.get('autofit_set', 0),
+            'render_triggered': self.stats.get('render_triggered', 0),
+            'pdf_generated': self.stats.get('pdf_generated', 0),
+            'pdf_deleted': self.stats.get('pdf_deleted', 0),
+            'pptx_generated': self.stats.get('pptx_generated', 0),
             'libreoffice_available': self.libreoffice_available,
             'libreoffice_cmd': getattr(self, 'libreoffice_cmd', None)
         }

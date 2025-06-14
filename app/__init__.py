@@ -14,6 +14,7 @@ from .utils.logger import LogManager
 from .utils.thread_pool_executor import thread_pool
 from .utils.enhanced_task_queue import translation_queue
 from .utils.lazy_http_client import http_client
+from .utils.db_session_manager import setup_db_monitoring
 
 # 创建扩展实例
 db = SQLAlchemy()
@@ -59,6 +60,19 @@ def create_app(config_name='development'):
     # 配置日志过滤器 - 减少SQL和HTTP请求日志噪音
     _configure_smart_log_filters(config_name)
 
+    # 显式设置SQLAlchemy引擎选项，确保连接池大小为100
+    pool_size = int(os.environ.get('DB_POOL_SIZE', 100))
+    app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
+        'pool_size': pool_size,
+        'pool_timeout': int(os.environ.get('DB_POOL_TIMEOUT', 30)),
+        'pool_recycle': int(os.environ.get('DB_POOL_RECYCLE', 3600)),
+        'max_overflow': int(os.environ.get('DB_MAX_OVERFLOW', 20)),
+        'connect_args': {
+            'connect_timeout': int(os.environ.get('DB_CONNECT_TIMEOUT', 10))
+        }
+    }
+    logger.info(f"配置数据库连接池大小: {pool_size}")
+
     # 初始化扩展
     db.init_app(app)
 
@@ -100,6 +114,7 @@ def create_app(config_name='development'):
     from .views.sso_auth import sso_bp
     from .routes.log_management import router as log_management_bp
     from .routes.stop_words import bp as stop_words_bp
+    from .routes.db_management import router as db_management_bp
 
     app.register_blueprint(main_bp)
     app.register_blueprint(auth_bp, url_prefix='/auth')
@@ -107,6 +122,7 @@ def create_app(config_name='development'):
     app.register_blueprint(upload_bp, url_prefix='/api')
     app.register_blueprint(stop_words_bp)  # 停翻词路由
     app.register_blueprint(log_management_bp)
+    app.register_blueprint(db_management_bp)  # 数据库管理路由
 
     # 创建数据库表
     with app.app_context():
@@ -120,6 +136,11 @@ def create_app(config_name='development'):
     # 启动清理任务
     from .tasks.cleanup import schedule_cleanup_task
     schedule_cleanup_task()
+    
+    # 启动数据库监控
+    monitor_interval = int(os.getenv('DB_MONITOR_INTERVAL', 3600))  # 默认每小时监控一次
+    db_monitor_thread = setup_db_monitoring(app, interval=monitor_interval)
+    logger.info(f"数据库监控已启动，监控间隔: {monitor_interval}秒")
 
     logger.info(f"应用已初始化 - 环境: {config_name}")
     return app

@@ -49,11 +49,11 @@ class Config:
     DB_NAME = os.environ.get('DB_NAME') or 'app'
     
     # 数据库连接池配置
-    DB_POOL_SIZE = int(os.environ.get('DB_POOL_SIZE') or 10)
+    DB_POOL_SIZE = int(os.environ.get('DB_POOL_SIZE') or 100)
     DB_MAX_OVERFLOW = int(os.environ.get('DB_MAX_OVERFLOW') or 20)
     DB_POOL_TIMEOUT = int(os.environ.get('DB_POOL_TIMEOUT') or 10)
     DB_POOL_RECYCLE = int(os.environ.get('DB_POOL_RECYCLE') or 3600)
-    
+    print(DB_POOL_SIZE, DB_MAX_OVERFLOW, DB_POOL_RECYCLE, DB_POOL_TIMEOUT)
     # Redis配置
     REDIS_URL = os.environ.get('REDIS_URL') or 'redis://localhost:6379/0'
     

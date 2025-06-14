@@ -77,7 +77,7 @@ class Config:
     
     # 额外的数据库连接配置
     DB_CONNECT_TIMEOUT = int(os.environ.get('DB_CONNECT_TIMEOUT', 10))
-    DB_POOL_SIZE = int(os.environ.get('DB_POOL_SIZE', 10))
+    DB_POOL_SIZE = int(os.environ.get('DB_POOL_SIZE', 100))  # 修改默认值为100
     DB_USE_SSL = os.environ.get('DB_USE_SSL', 'false').lower() == 'true'
     
     # 构建数据库URI

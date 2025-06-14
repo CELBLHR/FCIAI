@@ -152,6 +152,52 @@
     box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
 }
 
+/* 管理员工具栏 */
+.admin-tools {
+    background: rgba(0, 0, 0, 0.3);
+    border-radius: 8px;
+    padding: 15px;
+    margin-bottom: 20px;
+}
+
+.admin-tools h3 {
+    margin-top: 0;
+    margin-bottom: 10px;
+    color: var(--primary-color);
+    font-size: 1.1rem;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    padding-bottom: 8px;
+}
+
+.admin-tools-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+}
+
+.admin-tool-btn {
+    background: rgba(0, 168, 255, 0.2);
+    border: 1px solid var(--primary-color);
+    border-radius: 5px;
+    padding: 8px 12px;
+    color: var(--text-color);
+    font-size: 0.9rem;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.admin-tool-btn:hover {
+    background: rgba(0, 168, 255, 0.3);
+    transform: translateY(-1px);
+}
+
+.admin-tool-btn i {
+    font-size: 0.9rem;
+}
+
 /* Loading spinner */
 .sk-chase {
     width: 40px;
@@ -670,6 +716,24 @@
 
 <div class="main-content">
     <div class="upload-section">
+        {% if current_user.is_admin %}
+        <div class="admin-tools">
+            <h3>管理员工具</h3>
+            <div class="admin-tools-list">
+                <a href="{{ url_for('db_management.db_stats_page') }}" class="admin-tool-btn">
+                    <i class="fas fa-database"></i> 数据库连接池状态
+                </a>
+                <a href="{{ url_for('main.monitor') }}" class="admin-tool-btn">
+                    <i class="fas fa-chart-line"></i> 系统监控
+                </a>
+                <a href="{{ url_for('main.logs') }}" class="admin-tool-btn">
+                    <i class="fas fa-file-alt"></i> 系统日志
+                </a>
+            </div>
+        </div>
+        {% endif %}
+
+        <h2>PPT翻译</h2>
         <div class="upload-container" id="dropZone" onclick="document.getElementById('fileInput').click()">
             <p>拖拽PPT文件到这里或点击上传</p>
             <input type="file" id="fileInput" accept=".ppt,.pptx" style="display: none;">
@@ -1378,10 +1442,6 @@ function toggleDetailView() {
         toggleBtn.innerHTML = '<i class="fas fa-chevron-up"></i>';
     }
 }
-
-
-
-
 
 // 在页面加载时检查是否有正在进行的任务
 document.addEventListener('DOMContentLoaded', () => {

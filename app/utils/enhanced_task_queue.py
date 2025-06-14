@@ -623,5 +623,55 @@ class EnhancedTranslationQueue:
                 'retry_times': self.retry_times
             }
 
+    def get_queue_size(self) -> int:
+        """
+        获取队列总大小
+        
+        Returns:
+            队列中的任务总数
+        """
+        with self.lock:
+            return len(self.tasks)
+    
+    def get_active_count(self) -> int:
+        """
+        获取活动任务数
+        
+        Returns:
+            当前正在处理的任务数
+        """
+        with self.lock:
+            return len(self.active_tasks)
+    
+    def get_waiting_count(self) -> int:
+        """
+        获取等待任务数
+        
+        Returns:
+            等待处理的任务数
+        """
+        with self.lock:
+            return len([t for t in self.tasks.values() if t.status == "waiting"])
+    
+    def get_completed_count(self) -> int:
+        """
+        获取已完成任务数
+        
+        Returns:
+            已完成的任务数
+        """
+        with self.lock:
+            return len([t for t in self.tasks.values() if t.status == "completed"])
+    
+    def get_failed_count(self) -> int:
+        """
+        获取失败任务数
+        
+        Returns:
+            失败的任务数
+        """
+        with self.lock:
+            return len([t for t in self.tasks.values() if t.status == "failed"])
+
 # 创建全局翻译队列实例
 translation_queue = EnhancedTranslationQueue()

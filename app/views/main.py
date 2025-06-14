@@ -92,7 +92,10 @@ def get_unique_filename(filename):
     ext = filename.rsplit('.', 1)[1].lower()
     return f"{uuid.uuid4().hex}.{ext}"
 
-
+def custom_filename(name):
+    # 移除危险的路径字符，仅保留基本合法字符 + 中文
+    name = re.sub(r'[\\/:"*?<>|]+', '_', name)  # 替换非法字符
+    return name
 @main.route('/upload', methods=['POST'])
 @login_required
 def upload_file():
@@ -161,7 +164,7 @@ def upload_file():
         os.makedirs(user_upload_dir, exist_ok=True)
 
         # 生成安全的文件名
-        original_filename = secure_filename(file.filename)
+        original_filename = custom_filename(file.filename)
         stored_filename = get_unique_filename(original_filename)
         file_path = os.path.join(user_upload_dir, stored_filename)
 

@@ -1,0 +1,358 @@
+{% extends "main/base_layout.html" %}
+
+{% block title %}数据库连接池状态{% endblock %}
+
+{% block styles %}
+<style>
+.db-stats-container {
+    padding: 20px;
+}
+
+.stats-card {
+    background: rgba(0, 0, 0, 0.2);
+    border-radius: 10px;
+    padding: 20px;
+    margin-bottom: 20px;
+    border: 1px solid rgba(0, 168, 255, 0.2);
+}
+
+.stats-title {
+    color: var(--text-color);
+    font-size: 1.2rem;
+    margin-bottom: 15px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    padding-bottom: 10px;
+}
+
+.stats-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-bottom: 15px;
+}
+
+.stats-table th,
+.stats-table td {
+    padding: 10px;
+    text-align: left;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.stats-table th {
+    color: var(--primary-color);
+    font-weight: normal;
+}
+
+.stats-value {
+    font-family: monospace;
+}
+
+.stats-error {
+    color: #ff5252;
+    padding: 10px;
+    background: rgba(255, 82, 82, 0.1);
+    border-radius: 5px;
+    margin: 10px 0;
+}
+
+.stats-warning {
+    color: #ffb300;
+    padding: 10px;
+    background: rgba(255, 179, 0, 0.1);
+    border-radius: 5px;
+    margin: 10px 0;
+}
+
+.stats-success {
+    color: #4caf50;
+    padding: 10px;
+    background: rgba(76, 175, 80, 0.1);
+    border-radius: 5px;
+    margin: 10px 0;
+}
+
+.action-buttons {
+    margin-top: 20px;
+    display: flex;
+    gap: 10px;
+}
+
+.action-button {
+    background: var(--primary-color);
+    color: #fff;
+    border: none;
+    padding: 10px 15px;
+    border-radius: 5px;
+    cursor: pointer;
+    transition: background 0.3s;
+}
+
+.action-button:hover {
+    background: var(--primary-color-dark);
+}
+
+.action-button.secondary {
+    background: rgba(0, 168, 255, 0.2);
+    border: 1px solid var(--primary-color);
+}
+
+.action-button.secondary:hover {
+    background: rgba(0, 168, 255, 0.3);
+}
+
+.refresh-icon {
+    display: inline-block;
+    width: 16px;
+    height: 16px;
+    margin-right: 5px;
+    vertical-align: middle;
+}
+
+.connection-status {
+    display: inline-block;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    margin-right: 5px;
+}
+
+.status-active {
+    background-color: #4caf50;
+}
+
+.status-idle {
+    background-color: #2196f3;
+}
+
+.status-error {
+    background-color: #ff5252;
+}
+
+@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+
+.loading {
+    animation: spin 1s linear infinite;
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="db-stats-container">
+    <h1>数据库连接池状态</h1>
+    
+    {% if error %}
+    <div class="stats-error">
+        <strong>错误:</strong> {{ error }}
+    </div>
+    {% endif %}
+    
+    <!-- 数据库连接池状态 -->
+    <div class="stats-card">
+        <div class="stats-title">数据库连接池状态</div>
+        
+        {% if db_stats and not db_stats.error %}
+        <table class="stats-table">
+            <tr>
+                <th>引擎名称</th>
+                <td class="stats-value">{{ db_stats.engine_name }}</td>
+                <th>驱动名称</th>
+                <td class="stats-value">{{ db_stats.driver_name }}</td>
+            </tr>
+            <tr>
+                <th>数据库URL</th>
+                <td class="stats-value" colspan="3">{{ db_stats.url }}</td>
+            </tr>
+        </table>
+        
+        <div class="stats-title">连接池配置</div>
+        {% if db_stats.pool_config %}
+        <table class="stats-table">
+            <tr>
+                <th>池大小</th>
+                <td class="stats-value">{{ db_stats.pool_config.size }}</td>
+                <th>最大溢出</th>
+                <td class="stats-value">{{ db_stats.pool_config.max_overflow }}</td>
+            </tr>
+            <tr>
+                <th>超时时间</th>
+                <td class="stats-value">{{ db_stats.pool_config.timeout }} 秒</td>
+                <th>回收时间</th>
+                <td class="stats-value">{{ db_stats.pool_config.recycle }} 秒</td>
+            </tr>
+            <tr>
+                <th>预检测</th>
+                <td class="stats-value" colspan="3">{{ "启用" if db_stats.pool_config.pre_ping else "禁用" }}</td>
+            </tr>
+        </table>
+        {% else %}
+        <div class="stats-warning">无法获取连接池配置信息</div>
+        {% endif %}
+        
+        <div class="stats-title">连接池状态</div>
+        <table class="stats-table">
+            <tr>
+                <th>当前池大小</th>
+                <td class="stats-value">{{ db_stats.pool_size }}</td>
+                <th>已检入连接</th>
+                <td class="stats-value">{{ db_stats.checkedin }}</td>
+            </tr>
+            <tr>
+                <th>已检出连接</th>
+                <td class="stats-value">{{ db_stats.checkedout }}</td>
+                <th>溢出连接</th>
+                <td class="stats-value">{{ db_stats.overflow }}</td>
+            </tr>
+        </table>
+        
+        {% if db_stats.checkedout_connections and db_stats.checkedout_connections is iterable and db_stats.checkedout_connections is not string %}
+        <div class="stats-title">已检出连接详情</div>
+        <table class="stats-table">
+            <thead>
+                <tr>
+                    <th>#</th>
+                    <th>连接信息</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for conn in db_stats.checkedout_connections %}
+                <tr>
+                    <td>{{ loop.index }}</td>
+                    <td class="stats-value">{{ conn }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% elif db_stats.checkedout_connections is string %}
+        <div class="stats-warning">{{ db_stats.checkedout_connections }}</div>
+        {% endif %}
+        
+        {% else %}
+        <div class="stats-error">
+            {% if db_stats and db_stats.error %}
+            {{ db_stats.error }}
+            {% else %}
+            无法获取数据库连接池状态
+            {% endif %}
+        </div>
+        {% endif %}
+    </div>
+    
+    <!-- 线程池状态 -->
+    <div class="stats-card">
+        <div class="stats-title">线程池状态</div>
+        
+        {% if thread_stats %}
+        <table class="stats-table">
+            <tr>
+                <th>IO线程池大小</th>
+                <td class="stats-value">{{ thread_stats.io_bound_pool_size }}</td>
+                <th>IO活跃线程数</th>
+                <td class="stats-value">{{ thread_stats.io_bound_active_threads }}</td>
+            </tr>
+            <tr>
+                <th>CPU线程池大小</th>
+                <td class="stats-value">{{ thread_stats.cpu_bound_pool_size }}</td>
+                <th>CPU活跃线程数</th>
+                <td class="stats-value">{{ thread_stats.cpu_bound_active_threads }}</td>
+            </tr>
+            <tr>
+                <th>总任务数</th>
+                <td class="stats-value">{{ thread_stats.total_tasks }}</td>
+                <th>完成任务数</th>
+                <td class="stats-value">{{ thread_stats.completed_tasks }}</td>
+            </tr>
+        </table>
+        {% else %}
+        <div class="stats-warning">无法获取线程池状态</div>
+        {% endif %}
+    </div>
+    
+    <!-- 任务队列状态 -->
+    <div class="stats-card">
+        <div class="stats-title">任务队列状态</div>
+        
+        {% if queue_stats %}
+        <table class="stats-table">
+            <tr>
+                <th>队列大小</th>
+                <td class="stats-value">{{ queue_stats.queue_size }}</td>
+                <th>活跃任务数</th>
+                <td class="stats-value">{{ queue_stats.active_tasks }}</td>
+            </tr>
+            <tr>
+                <th>等待任务数</th>
+                <td class="stats-value">{{ queue_stats.waiting_tasks }}</td>
+                <th>完成任务数</th>
+                <td class="stats-value">{{ queue_stats.completed_tasks }}</td>
+            </tr>
+            <tr>
+                <th>失败任务数</th>
+                <td class="stats-value">{{ queue_stats.failed_tasks }}</td>
+                <th>最大并发数</th>
+                <td class="stats-value">{{ queue_stats.max_concurrent }}</td>
+            </tr>
+        </table>
+        {% else %}
+        <div class="stats-warning">无法获取任务队列状态</div>
+        {% endif %}
+    </div>
+    
+    <div class="action-buttons">
+        <button id="refreshStats" class="action-button" data-debounce data-loading-text="刷新中...">
+            <svg class="refresh-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M23 4v6h-6"></path>
+                <path d="M1 20v-6h6"></path>
+                <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10"></path>
+                <path d="M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
+            </svg>
+            刷新统计信息
+        </button>
+        <button id="recycleConnections" class="action-button secondary" data-debounce data-loading-text="正在回收...">回收空闲连接</button>
+        <a href="/dashboard" class="action-button secondary">返回仪表板</a>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const refreshButton = document.getElementById('refreshStats');
+    const recycleButton = document.getElementById('recycleConnections');
+    
+    // 刷新统计信息 - 使用防抖动功能
+    addButtonDebounce(refreshButton, function() {
+        const icon = refreshButton.querySelector('svg');
+        icon.classList.add('loading');
+        
+        window.location.reload();
+    }, 1000, "刷新中...");
+    
+    // 回收空闲连接 - 使用防抖动功能
+    addButtonDebounce(recycleButton, function() {
+        if (confirm('确定要回收空闲连接吗？')) {
+            fetch('/api/db/recycle', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                }
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    alert(`成功回收了 ${data.recycled} 个空闲连接`);
+                } else {
+                    alert(`回收失败: ${data.error}`);
+                }
+                window.location.reload();
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                alert('操作失败，请查看控制台获取详细信息');
+            });
+        }
+    }, 2000, "正在回收...");
+});
+</script>
+{% endblock %} 

@@ -404,6 +404,47 @@ class EnhancedThreadPoolExecutor:
                 'total_tasks_created': self.task_count,
                 'active_tasks': len(self.tasks)
             }
+            
+    def get_io_active_count(self) -> int:
+        """
+        获取当前活动的IO线程数量
+        
+        Returns:
+            活动IO线程数量
+        """
+        if hasattr(self, 'io_executor') and self.io_executor:
+            return len(self.io_executor._threads)
+        return 0
+        
+    def get_cpu_active_count(self) -> int:
+        """
+        获取当前活动的CPU线程数量
+        
+        Returns:
+            活动CPU线程数量
+        """
+        if hasattr(self, 'cpu_executor') and self.cpu_executor:
+            return len(self.cpu_executor._threads)
+        return 0
+        
+    def get_task_count(self) -> int:
+        """
+        获取总任务数
+        
+        Returns:
+            总任务数
+        """
+        return self.task_count
+        
+    def get_completed_task_count(self) -> int:
+        """
+        获取已完成任务数
+        
+        Returns:
+            已完成任务数
+        """
+        with self.lock:
+            return sum(1 for task in self.tasks.values() if task.status == TaskStatus.COMPLETED)
 
 # 创建全局线程池执行器实例
 thread_pool = EnhancedThreadPoolExecutor() 
