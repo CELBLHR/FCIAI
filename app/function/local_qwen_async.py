@@ -271,7 +271,15 @@ async def translate_by_fields_async(field: str, text: str, stop_words: List[str]
 以下或单词短语**保留原样，不翻译**：
 {stop_words_str}
 请将每一段{source_language}文本翻译成专业的{target_language}。
-注意，被【】包裹的才是一段文本,不要将一段文本拆开
+1. 每一个【】内的内容，都是一个完整的段落或句群，请**保持整体性**，不要拆分为多个目标句子。
+2. 输出格式应严格保持输入顺序，一段对应一段，使用如下 JSON 格式输出：
+
+  {{
+    "source_language": "【原始文本】",
+    "target_language": "【对应翻译】"
+  }},
+  ...
+3. 不要对【】内的内容进行切分，每段只输出一个目标译文。
     **重要：请严格遵守以下翻译规则**：
     1. **格式要求**：
         - 对每条待翻译文本，输出一个 JSON 对象，格式如下：

@@ -28,7 +28,15 @@ class ParagraphInfo:
 
     def __post_init__(self):
         self.length = len(self.text)
-
+def clean_text_for_ppt(text):
+    # 删除所有不可见的控制字符（ASCII < 32 且不是常见换行）
+    text = re.sub(r'[\x00-\x08\x0b-\x1f\x7f]', '', text)
+    return text
+def clean_brackets(text):
+    """
+    去除文本中的【和】符号
+    """
+    return text.replace('【', '').replace('】', '')
 class PageBasedTranslator:
     """基于页面的翻译器"""
 
@@ -367,7 +375,10 @@ class PageBasedTranslator:
                 continue
 
             para_info = paragraphs[para_idx]
-
+            para_info.text=clean_text_for_ppt(para_info.text)
+            translation = clean_text_for_ppt(translation)
+            para_info.text = clean_brackets(para_info.text)
+            translation = clean_brackets(translation)
             try:
                 if para_info.shape_type == 'textbox':
                     # 处理普通文本框
@@ -389,7 +400,7 @@ class PageBasedTranslator:
 
                         # 检查相似度，如果相似度过高则跳过翻译
                         from .ppt_translate import should_skip_translation_insertion
-                        if should_skip_translation_insertion(para_info.text, translation, threshold=0.9, debug=True):
+                        if should_skip_translation_insertion(para_info.text, translation, threshold=0.85, debug=True):
                             logger.info(f"跳过高相似度翻译: '{para_info.text[:30]}...' -> '{translation[:30]}...'")
                             continue
 
