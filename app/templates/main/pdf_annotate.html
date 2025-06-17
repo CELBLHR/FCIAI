@@ -491,11 +491,23 @@ async function loadPDF(url) {
         console.log('开始加载PDF:', url);
         showLoading();
 
-        // 确保URL是绝对路径
-        const absoluteUrl = url.startsWith('http') ? url : window.location.origin + url;
+        // 确保URL是绝对路径并使用与当前页面相同的协议
+        let absoluteUrl = url;
+        if (!url.startsWith('http')) {
+            absoluteUrl = window.location.origin + url;
+        }
+        
+        // 确保使用与当前页面相同的协议(HTTP或HTTPS)
+        const currentProtocol = window.location.protocol;
+        if (absoluteUrl.startsWith('http:') && currentProtocol === 'https:') {
+            absoluteUrl = absoluteUrl.replace('http:', 'https:');
+            console.log('已将HTTP协议转换为HTTPS:', absoluteUrl);
+        }
+        
         console.log('处理后的PDF URL:', absoluteUrl);
 
         // 先检查URL是否可访问
+        console.log('尝试访问PDF文件...');
         const checkResponse = await fetch(absoluteUrl);
         if (!checkResponse.ok) {
             throw new Error(`PDF文件不可访问: ${checkResponse.status} ${checkResponse.statusText}`);
@@ -521,6 +533,13 @@ async function loadPDF(url) {
         console.error('PDF加载错误:', error);
         hideLoading();
         showToast(`加载PDF文件失败: ${error.message}`, 'error');
+
+        // 显示更详细的错误信息
+        if (error.message.includes('Mixed Content')) {
+            showToast('混合内容错误: 请确保网站通过HTTPS访问，或联系管理员配置服务器以支持HTTPS', 'error');
+        } else if (error.message.includes('Failed to fetch')) {
+            showToast('网络错误: 无法获取PDF文件，请检查网络连接或联系管理员', 'error');
+        }
 
         // 显示上传区域
         uploadArea.style.display = 'block';

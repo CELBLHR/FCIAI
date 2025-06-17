@@ -919,11 +919,22 @@ def get_pdf(filename):
                 as_attachment=False,
                 download_name=filename
             )
-            # 添加必要的CORS和缓存控制头
+            # 添加必要的安全头部
             response.headers['Access-Control-Allow-Origin'] = '*'
             response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
             response.headers['Pragma'] = 'no-cache'
             response.headers['Expires'] = '0'
+            
+            # 添加内容安全策略头部
+            response.headers['Content-Security-Policy'] = "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; object-src 'self'"
+            
+            # 添加X-Content-Type-Options头部，防止MIME类型嗅探
+            response.headers['X-Content-Type-Options'] = 'nosniff'
+            
+            # 强制使用HTTPS
+            if request.is_secure:
+                response.headers['Strict-Transport-Security'] = 'max-age=31536000; includeSubDomains'
+            
             logger.info(f"PDF文件已成功提供: {file_path}")
             return response
 
@@ -1808,8 +1819,13 @@ def upload_pdf():
         except Exception as e:
             raise Exception(f"文件读取测试失败: {str(e)}")
 
-        # 生成完整的URL，包含域名和协议
+        # 生成完整的URL，包含域名和协议，确保使用与当前请求相同的协议
         file_url = url_for('main.get_pdf', filename=stored_filename, _external=True)
+        
+        # 确保URL使用与当前请求相同的协议(HTTP或HTTPS)
+        if request.is_secure and file_url.startswith('http:'):
+            file_url = file_url.replace('http:', 'https:', 1)
+        
         logger.info(f"生成的PDF URL: {file_url}")
 
         return jsonify({

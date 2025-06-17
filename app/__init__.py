@@ -60,6 +60,19 @@ def create_app(config_name='development'):
     # 配置日志过滤器 - 减少SQL和HTTP请求日志噪音
     _configure_smart_log_filters(config_name)
 
+    # 配置HTTPS重定向
+    if config_name == 'production' or os.environ.get('FORCE_HTTPS', 'false').lower() == 'true':
+        logger.info("启用HTTPS重定向")
+        
+        @app.before_request
+        def redirect_to_https():
+            from flask import request, redirect, url_for
+            # 如果请求不是HTTPS，则重定向到HTTPS
+            if not request.is_secure and request.endpoint and request.endpoint != 'static':
+                url = request.url.replace('http://', 'https://', 1)
+                logger.debug(f"重定向HTTP请求到HTTPS: {url}")
+                return redirect(url, code=301)
+    
     # 显式设置SQLAlchemy引擎选项，确保连接池大小为100
     pool_size = int(os.environ.get('DB_POOL_SIZE', 100))
     app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
