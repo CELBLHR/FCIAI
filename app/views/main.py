@@ -1,4 +1,3 @@
-
 import time
 import json
 
@@ -1510,3 +1509,286 @@ def ppt_translate_simple():
     except Exception as e:
         logger.error(f"同步API翻译失败: {str(e)}")
         return jsonify({'error': f'翻译失败: {str(e)}'}), 500
+
+
+@main.route('/db_stats')
+@login_required
+def db_stats():
+    """数据库状态页面"""
+    if not current_user.is_administrator():
+        flash('您没有权限访问此页面')
+        return redirect(url_for('main.index'))
+    
+    # 获取数据库统计信息
+    db_stats = get_db_stats()
+    
+    # 获取线程池统计信息
+    thread_pool_stats = thread_pool.get_stats()
+    
+    # 获取任务队列统计信息
+    queue_stats = translation_queue.get_queue_stats()
+    
+    return render_template('main/db_stats.html', 
+                          user=current_user,
+                          db_stats=db_stats,
+                          thread_pool_stats=thread_pool_stats,
+                          queue_stats=queue_stats)
+
+
+@main.route('/db_stats_data')
+@login_required
+def get_db_stats_data():
+    """获取数据库统计数据的API，用于AJAX刷新"""
+    if not current_user.is_administrator():
+        return jsonify({'error': '没有权限访问此API'}), 403
+    
+    # 获取数据库统计信息
+    db_stats = get_db_stats()
+    
+    return jsonify(db_stats)
+
+
+@main.route('/recycle_connections', methods=['POST'])
+@login_required
+def recycle_connections():
+    """回收空闲数据库连接"""
+    if not current_user.is_administrator():
+        return jsonify({'success': False, 'message': '没有权限执行此操作'}), 403
+    
+    try:
+        # 调用翻译队列中的回收连接方法
+        result = translation_queue.recycle_idle_connections()
+        
+        # 记录操作日志
+        logger.info(f"管理员 {current_user.username} 手动回收了数据库空闲连接")
+        
+        return jsonify(result)
+    
+    except Exception as e:
+        logger.error(f"回收数据库连接失败: {str(e)}")
+        return jsonify({
+            'success': False,
+            'message': f'回收连接失败: {str(e)}',
+            'error': str(e)
+        }), 500
+
+
+def get_db_stats():
+    """获取数据库连接池统计信息"""
+    try:
+        engine = db.engine
+        
+        # 基本信息
+        stats = {
+            'engine_name': engine.name,
+            'driver_name': engine.driver,
+            'url': str(engine.url).replace('://*:*@', '://***:***@'),  # 隐藏敏感信息
+            'pool_size': engine.pool.size(),
+            'current_size': engine.pool.size(),
+            'checked_in': engine.pool.checkedin(),
+            'checked_out': engine.pool.checkedout(),
+            'overflow': engine.pool.overflow(),
+            'max_overflow': engine.pool._max_overflow
+        }
+        
+        # 获取连接池配置
+        try:
+            stats['pool_config'] = {
+                'size': engine.pool.size(),
+                'max_overflow': engine.pool._max_overflow,
+                'timeout': engine.pool._timeout,
+                'recycle': engine.pool._recycle,
+                'pre_ping': engine.pool._pre_ping
+            }
+        except:
+            stats['pool_config'] = None
+        
+        # 获取已签出连接的详细信息
+        checked_out_details = []
+        try:
+            mutex = engine.pool._mutex
+            checked_out = {}
+            
+            if hasattr(mutex, '_semlock') and hasattr(engine.pool, '_checked_out'):
+                # SQLAlchemy 1.3+ 
+                checked_out = engine.pool._checked_out
+            elif hasattr(engine.pool, '_checked_out'):
+                # 早期版本
+                checked_out = engine.pool._checked_out
+            
+            for conn, (ref, traceback, timestamp) in checked_out.items():
+                conn_id = str(conn)
+                checkout_time = datetime.fromtimestamp(timestamp).strftime('%Y-%m-%d %H:%M:%S')
+                duration = time.time() - timestamp
+                duration_str = f"{duration:.2f}秒"
+                
+                if duration > 3600:
+                    hours = int(duration / 3600)
+                    minutes = int((duration % 3600) / 60)
+                    duration_str = f"{hours}小时{minutes}分钟"
+                elif duration > 60:
+                    minutes = int(duration / 60)
+                    seconds = int(duration % 60)
+                    duration_str = f"{minutes}分钟{seconds}秒"
+                
+                checked_out_details.append({
+                    'connection_id': conn_id,
+                    'checkout_time': checkout_time,
+                    'duration': duration_str,
+                    'stack_trace': '\n'.join(traceback) if traceback else '无堆栈信息'
+                })
+            
+            stats['checked_out_details'] = checked_out_details
+        except Exception as e:
+            stats['checked_out_details'] = []
+            logger.warning(f"获取已签出连接详情失败: {str(e)}")
+        
+        return stats
+    
+    except Exception as e:
+        logger.error(f"获取数据库统计信息失败: {str(e)}")
+        return {'error': f'获取数据库统计信息失败: {str(e)}'}
+
+
+@main.route('/system_status', methods=['GET'])
+@login_required
+def system_status():
+    """获取系统状态信息"""
+    if not current_user.is_administrator():
+        return jsonify({'error': '没有权限访问此API'}), 403
+    
+    try:
+        # 获取线程池状态
+        thread_pool_stats = thread_pool.get_stats()
+        thread_pool_health = thread_pool.get_health_status()
+        
+        # 获取任务队列状态
+        queue_stats = translation_queue.get_queue_stats()
+        
+        # 获取数据库连接状态
+        db_stats = get_db_stats()
+        
+        # 系统内存使用情况
+        import psutil
+        memory = psutil.virtual_memory()
+        memory_stats = {
+            'total': memory.total,
+            'available': memory.available,
+            'used': memory.used,
+            'percent': memory.percent
+        }
+        
+        # CPU使用情况
+        cpu_stats = {
+            'percent': psutil.cpu_percent(),
+            'count': psutil.cpu_count(),
+            'logical_count': psutil.cpu_count(logical=True)
+        }
+        
+        # 返回汇总状态
+        status = {
+            'thread_pool': {
+                'stats': thread_pool_stats,
+                'health': thread_pool_health
+            },
+            'task_queue': queue_stats,
+            'database': db_stats,
+            'memory': memory_stats,
+            'cpu': cpu_stats,
+            'time': datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        }
+        
+        return jsonify(status)
+        
+    except Exception as e:
+        logger.error(f"获取系统状态失败: {str(e)}")
+        return jsonify({
+            'error': f'获取系统状态失败: {str(e)}'
+        }), 500
+
+
+@main.route('/system/reset_thread_pool', methods=['POST'])
+@login_required
+def reset_thread_pool():
+    """重置线程池"""
+    if not current_user.is_administrator():
+        return jsonify({'success': False, 'message': '没有权限执行此操作'}), 403
+    
+    try:
+        # 记录操作日志
+        logger.warning(f"管理员 {current_user.username} 正在重置线程池")
+        
+        # 获取线程池配置
+        stats_before = thread_pool.get_stats()
+        
+        # 重新配置线程池
+        thread_pool.configure()
+        
+        # 获取重置后的状态
+        stats_after = thread_pool.get_stats()
+        
+        return jsonify({
+            'success': True,
+            'message': '线程池已重置',
+            'before': stats_before,
+            'after': stats_after
+        })
+        
+    except Exception as e:
+        logger.error(f"重置线程池失败: {str(e)}")
+        return jsonify({
+            'success': False,
+            'message': f'重置线程池失败: {str(e)}',
+            'error': str(e)
+        }), 500
+
+
+@main.route('/system/reset_task_queue', methods=['POST'])
+@login_required
+def reset_task_queue():
+    """重置任务队列"""
+    if not current_user.is_administrator():
+        return jsonify({'success': False, 'message': '没有权限执行此操作'}), 403
+    
+    try:
+        # 记录操作日志
+        logger.warning(f"管理员 {current_user.username} 正在重置任务队列")
+        
+        # 获取任务队列状态
+        stats_before = translation_queue.get_queue_stats()
+        
+        # 停止处理器
+        translation_queue.stop_processor()
+        
+        # 重新启动处理器
+        translation_queue.start_processor()
+        
+        # 获取重置后的状态
+        stats_after = translation_queue.get_queue_stats()
+        
+        return jsonify({
+            'success': True,
+            'message': '任务队列已重置',
+            'before': stats_before,
+            'after': stats_after
+        })
+        
+    except Exception as e:
+        logger.error(f"重置任务队列失败: {str(e)}")
+        return jsonify({
+            'success': False,
+            'message': f'重置任务队列失败: {str(e)}',
+            'error': str(e)
+        }), 500
+
+
+@main.route('/system_monitoring')
+@login_required
+def system_monitoring():
+    """系统监控页面 - 显示线程池、任务队列和数据库连接状态"""
+    # 验证用户是否有管理员权限
+    if not current_user.is_admin:
+        flash('您没有访问此页面的权限。', 'danger')
+        return redirect(url_for('main.index'))
+    
+    return render_template('main/system_monitoring.html', user=current_user)

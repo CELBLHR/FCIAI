@@ -11,6 +11,7 @@ import os
 import logging
 from concurrent.futures import ThreadPoolExecutor
 import uuid
+import traceback
 
 from .thread_pool_executor import thread_pool, TaskType, TaskStatus, Task
 
@@ -117,6 +118,11 @@ class EnhancedTranslationQueue:
         self.running = False
         self.lock = threading.RLock()
         self.task_available = threading.Event()
+        
+        # 线程池健康状态
+        self.last_pool_check = time.time()
+        self.pool_check_interval = 300  # 5分钟检查一次线程池健康状态
+        self.db_recycle_interval = 1800  # 30分钟回收一次数据库连接
 
         # 日志记录器
         self.logger = logging.getLogger(f"{__name__}.queue")
@@ -148,6 +154,9 @@ class EnhancedTranslationQueue:
             else:
                 self.start_processor()
                 self.initialized = True
+                
+                # 启动定期回收数据库连接的后台线程
+                self.schedule_db_connection_recycling()
 
     def add_task(self, user_id: int, user_name: str, file_path: str,
                 task_type: str = 'ppt_translate', source_language: str = 'en',
@@ -232,6 +241,9 @@ class EnhancedTranslationQueue:
                 self.logger.info("正在启动任务处理器...")
                 self.running = True
 
+                # 检查线程池健康状态
+                self._check_thread_pool_health()
+
                 # 创建处理器线程
                 self.processor_thread = threading.Thread(
                     target=self._processor_loop,
@@ -265,6 +277,12 @@ class EnhancedTranslationQueue:
                 # 等待新任务或检查间隔
                 self.task_available.wait(timeout=1.0)
                 self.task_available.clear()
+                
+                # 定期检查线程池健康状态
+                current_time = time.time()
+                if current_time - self.last_pool_check > self.pool_check_interval:
+                    self._check_thread_pool_health()
+                    self.last_pool_check = current_time
 
                 with self.lock:
                     # 检查是否可以启动新任务
@@ -295,87 +313,305 @@ class EnhancedTranslationQueue:
             except Exception as e:
                 self.logger.error(f"任务处理器错误: {str(e)}")
                 time.sleep(1)  # 发生错误时短暂暂停
+                
+                # 如果发生异常，检查线程池健康状态
+                self._check_thread_pool_health()
+
+    def _check_thread_pool_health(self) -> bool:
+        """
+        检查线程池健康状态，如果异常则尝试重新初始化
+        
+        Returns:
+            线程池是否健康
+        """
+        try:
+            if not thread_pool.initialized:
+                self.logger.warning("线程池未初始化，尝试重新初始化")
+                thread_pool.configure()
+                return False
+                
+            # 获取线程池统计信息
+            stats = thread_pool.get_stats()
+            io_count = thread_pool.get_io_active_count()
+            cpu_count = thread_pool.get_cpu_active_count()
+            
+            self.logger.info(f"线程池健康检查 - IO线程: {io_count}, CPU线程: {cpu_count}, " 
+                            f"总任务: {stats.get('total_tasks_created', 0)}")
+            
+            # 检查线程池是否正常工作
+            if io_count == 0 and stats.get('total_tasks_created', 0) > 0:
+                self.logger.warning("线程池IO线程数为0，可能异常，尝试重新初始化")
+                thread_pool.configure()
+                return False
+                
+            return True
+        except Exception as e:
+            self.logger.error(f"检查线程池健康状态时出错: {str(e)}")
+            # 出错时尝试重新初始化线程池
+            try:
+                thread_pool.configure()
+            except Exception as e2:
+                self.logger.error(f"重新初始化线程池失败: {str(e2)}")
+            return False
 
     def _process_task(self, task: TranslationTask) -> None:
         """
-        处理单个翻译任务
-
+        处理任务，将任务提交到线程池执行
+        
         Args:
-            task: 翻译任务对象
+            task: 要处理的任务
         """
         try:
+            # 如果任务已经取消或失败，直接返回
+            if task.status in ["canceled", "failed"]:
+                return
+            
             # 更新任务状态
             task.status = "processing"
-            task.start_time = datetime.now()
-            self.active_tasks[task.task_id] = task
-
-            # 提交到线程池
-            thread_pool.submit(
+            task.started_at = datetime.now()
+            
+            # 添加到活跃任务列表
+            with self.lock:
+                self.active_tasks[task.task_id] = task
+            
+            # 检查线程池健康状态
+            self._check_thread_pool_health()
+            
+            # 记录任务日志
+            self.logger.info(f"提交任务到线程池: {task.task_id}, 用户: {task.user_id}")
+            task.logger.info(f"准备处理翻译任务: {os.path.basename(task.file_path)}")
+            
+            # 定义任务完成回调函数
+            def task_done_callback(thread_task):
+                try:
+                    # 检查任务状态
+                    if thread_task.status == TaskStatus.COMPLETED:
+                        task.status = "completed"
+                        task.completed_at = datetime.now()
+                        task.event.set()
+                        self.logger.info(f"任务完成: {task.task_id}")
+                    elif thread_task.status == TaskStatus.FAILED:
+                        task.status = "failed"
+                        task.error = str(thread_task.error)
+                        task.completed_at = datetime.now()
+                        task.event.set()
+                        self.logger.error(f"任务失败: {task.task_id}, 错误: {task.error}")
+                    elif thread_task.status == TaskStatus.CANCELED:
+                        task.status = "canceled"
+                        task.completed_at = datetime.now()
+                        task.event.set()
+                        self.logger.info(f"任务已取消: {task.task_id}")
+                    
+                    # 清理任务资源
+                    self._cleanup_task_resources(task)
+                    
+                    # 从活跃任务列表中移除
+                    with self.lock:
+                        if task.task_id in self.active_tasks:
+                            del self.active_tasks[task.task_id]
+                    
+                    # 通知任务队列有新的处理空间
+                    self.task_available.set()
+                    
+                except Exception as e:
+                    self.logger.error(f"任务完成回调出错: {task.task_id}, 错误: {str(e)}")
+                    
+                    # 确保任务被从活跃列表中移除
+                    with self.lock:
+                        if task.task_id in self.active_tasks:
+                            del self.active_tasks[task.task_id]
+                    
+                    # 通知任务队列有新的处理空间
+                    self.task_available.set()
+            
+            # 提交任务到线程池
+            thread_task = thread_pool.submit(
                 func=self._execute_task,
                 args=(task,),
+                kwargs={},
                 task_type=TaskType.IO_BOUND,
                 priority=task.priority,
                 task_id=task.task_id,
                 timeout=self.task_timeout
             )
-
-            self.logger.info(
-                f"开始处理任务 - ID: {task.task_id}, "
-                f"用户: {task.user_name}"
-            )
-
+            
+            # 添加任务完成回调
+            thread_task.add_callback(task_done_callback)
+            
+            # 保存线程任务引用
+            task.thread_task = thread_task
+            
         except Exception as e:
-            self.logger.error(f"提交任务失败 - ID: {task.task_id}, 错误: {str(e)}")
-            self._handle_task_error(task, str(e))
-
-    def _execute_task(self, task: TranslationTask) -> None:
-        """
-        执行任务
-
-        Args:
-            task: 任务对象
-        """
-        try:
-            # 进度回调函数，用于更新任务进度
-            def progress_callback(current, total):
-                if total > 0:
-                    progress = int((current / total) * 100)
-                    task.progress = progress
-                    task.current_slide = current
-                    task.total_slides = total
-
-            # 根据任务类型执行不同的处理
-            if task.task_type == 'pdf_annotate':
-                result = self._execute_pdf_annotation_task(task, progress_callback)
-            else:  # 默认为PPT翻译
-                result = self._execute_ppt_translation_task(task, progress_callback)
-
-            # 更新任务状态
-            if result:
-                task.status = "completed"
-                task.progress = 100
-
-                # 更新数据库记录 - 使用延迟更新避免线程冲突
-                try:
-                    # 将数据库更新任务添加到队列中，由主线程处理
-                    self._schedule_database_update(task)
-                except Exception as e:
-                    self.logger.error(f"调度数据库更新时出错: {str(e)}")
-            else:
-                raise Exception(f"{task.task_type} 处理失败")
-
-        except Exception as e:
-            self.logger.error(f"执行任务时出错 - ID: {task.task_id}, 错误: {str(e)}")
-            self._handle_task_error(task, str(e))
-
-        finally:
-            # 清理活动任务
+            error_msg = f"提交任务到线程池失败: {str(e)}"
+            self.logger.exception(error_msg)
+            task.logger.error(error_msg)
+            
+            # 更新任务状态为失败
+            task.error = f"{str(e)}\n{traceback.format_exc()}"
+            task.status = "failed"
+            task.completed_at = datetime.now()
+            task.event.set()
+            
+            # 从活跃任务列表中移除
             with self.lock:
                 if task.task_id in self.active_tasks:
                     del self.active_tasks[task.task_id]
-
-            # 通知处理器可以处理新任务
+            
+            # 通知任务队列有新的处理空间
             self.task_available.set()
+            
+            # 处理任务错误
+            self._handle_task_error(task, error_msg)
+
+    def _execute_task(self, task: TranslationTask) -> bool:
+        """
+        执行翻译任务
+        
+        Args:
+            task: 要执行的任务
+            
+        Returns:
+            任务是否成功执行
+        """
+        try:
+            # 设置任务开始时间
+            task_start_time = time.time()
+            self.logger.info(f"开始执行任务: {task.task_id}, 类型: {task.task_type}")
+            
+            # 记录任务日志
+            current_time = datetime.now()
+            task.logs.append({
+                'timestamp': current_time,
+                'message': f"开始执行任务: {os.path.basename(task.file_path)}",
+                'level': 'info'
+            })
+            
+            # 记录数据库连接使用情况
+            from flask import current_app
+            engine = current_app.extensions['sqlalchemy'].db.engine
+            db_conn_before = {
+                'checkedin': engine.pool.checkedin(),
+                'checkedout': engine.pool.checkedout(),
+                'overflow': engine.pool.overflow()
+            }
+            
+            # 根据任务类型执行不同的操作
+            success = False
+            
+            # 进度回调函数
+            def progress_callback(current, total):
+                # 检查任务是否被取消
+                if task.status == "canceled" or (task.thread_task and task.thread_task.should_cancel()):
+                    raise RuntimeError("任务已被用户取消")
+                    
+                progress = int((current / total) * 100) if total > 0 else 0
+                task.progress = progress
+                task.current_slide = current
+                task.total_slides = total
+                
+                # 记录任务进度
+                if progress % 10 == 0 or progress == 100:  # 每10%记录一次
+                    log_message = f"处理进度: {current}/{total} ({progress}%)"
+                    task.logger.info(log_message)
+                    
+                    # 添加到任务日志
+                    task.logs.append({
+                        'timestamp': datetime.now(),
+                        'message': log_message,
+                        'level': 'info'
+                    })
+                    
+                # 检查任务执行时间，对于长时间运行的任务进行资源优化
+                elapsed_time = time.time() - task_start_time
+                if elapsed_time > 600:  # 10分钟
+                    # 检查数据库连接情况，如果有大量溢出连接，尝试回收
+                    current_overflow = engine.pool.overflow()
+                    if current_overflow > 5:  # 有多个溢出连接
+                        try:
+                            # 尝试回收空闲连接
+                            self.logger.warning(f"长时间运行任务 {task.task_id} 检测到 {current_overflow} 个溢出连接，尝试回收")
+                            with engine.connect() as conn:
+                                conn.execute(text("/* 长任务内部回收连接检查 */ SELECT 1"))
+                        except Exception as e:
+                            self.logger.error(f"长时间任务中回收连接失败: {str(e)}")
+                
+                # 保留最近的50条日志
+                if len(task.logs) > 50:
+                    task.logs = task.logs[-50:]
+            
+            # 执行具体的任务逻辑
+            if task.task_type == 'ppt_translate':
+                success = self._execute_ppt_translation_task(task, progress_callback)
+            elif task.task_type == 'pdf_annotate':
+                success = self._execute_pdf_annotation_task(task, progress_callback)
+            else:
+                raise ValueError(f"不支持的任务类型: {task.task_type}")
+            
+            # 记录数据库连接使用情况变化
+            db_conn_after = {
+                'checkedin': engine.pool.checkedin(),
+                'checkedout': engine.pool.checkedout(),
+                'overflow': engine.pool.overflow()
+            }
+            
+            # 检查是否有连接泄漏
+            if db_conn_after['checkedout'] > db_conn_before['checkedout']:
+                self.logger.warning(
+                    f"任务 {task.task_id} 完成后检测到可能的连接泄漏: "
+                    f"签出连接数从 {db_conn_before['checkedout']} 增加到 {db_conn_after['checkedout']}"
+                )
+                
+                # 尝试主动回收连接
+                try:
+                    self.logger.info(f"尝试回收连接池中的空闲连接")
+                    engine.dispose()
+                except Exception as e:
+                    self.logger.error(f"回收连接失败: {str(e)}")
+            
+            # 任务完成时间
+            task_end_time = time.time()
+            elapsed_time = task_end_time - task_start_time
+            
+            # 记录任务完成日志
+            log_level = 'info' if success else 'error'
+            log_message = f"任务{'成功完成' if success else '执行失败'}，耗时: {elapsed_time:.2f}秒"
+            
+            # 记录完成日志
+            task.logger.log(logging.INFO if success else logging.ERROR, log_message)
+            task.logs.append({
+                'timestamp': datetime.now(),
+                'message': log_message,
+                'level': log_level
+            })
+            
+            # 对于特别长时间运行的任务，进行垃圾回收
+            if elapsed_time > 1800:  # 30分钟
+                self.logger.warning(f"长时间运行任务 {task.task_id} 已完成，耗时 {elapsed_time:.2f}秒，执行资源回收")
+                # 尝试手动垃圾回收
+                import gc
+                gc.collect()
+            
+            # 返回任务结果
+            return success
+            
+        except Exception as e:
+            # 记录错误信息
+            error_msg = f"任务执行异常: {str(e)}"
+            task.error = f"{str(e)}\n{traceback.format_exc()}"
+            task.logger.error(error_msg)
+            
+            # 记录错误日志
+            task.logs.append({
+                'timestamp': datetime.now(),
+                'message': error_msg,
+                'level': 'error'
+            })
+            
+            # 保留最近的50条日志
+            if len(task.logs) > 50:
+                task.logs = task.logs[-50:]
+                
+            return False
 
     def _execute_ppt_translation_task(self, task: TranslationTask, progress_callback) -> bool:
         """
@@ -494,34 +730,75 @@ class EnhancedTranslationQueue:
     def _handle_task_error(self, task: TranslationTask, error: str) -> None:
         """
         处理任务错误
-
+        
         Args:
-            task: 翻译任务对象
+            task: 出错的任务
             error: 错误信息
         """
-        with self.lock:
-            task.error = error
+        self.logger.error(f"任务错误: {task.task_id}, 错误: {error}")
+        task.logger.error(f"翻译任务失败: {error}")
+        
+        # 更新任务错误信息
+        task.error = error
+        
+        # 检查是否可以重试
+        if task.retry_count < self.retry_times:
             task.retry_count += 1
-
-            if task.retry_count < self.retry_times:
-                # 重试任务
-                task.status = "waiting"
-                self.logger.warning(
-                    f"任务将重试 - ID: {task.task_id}, "
-                    f"重试次数: {task.retry_count}/{self.retry_times}"
-                )
-            else:
-                # 标记任务失败
-                task.status = "failed"
-                task.end_time = datetime.now()
-                self.logger.error(
-                    f"任务失败 - ID: {task.task_id}, "
-                    f"重试次数已达上限: {self.retry_times}"
-                )
-
-            # 从活动任务中移除
-            if task.task_id in self.active_tasks:
-                del self.active_tasks[task.task_id]
+            task.status = "waiting"
+            task.progress = 0
+            task.logger.info(f"准备重试任务 (第{task.retry_count}次)")
+            
+            # 更新当前操作信息
+            current_time = datetime.now()
+            task.logs.append({
+                'timestamp': current_time,
+                'message': f"任务失败，准备重试 ({task.retry_count}/{self.retry_times}): {error}",
+                'level': 'warning'
+            })
+            
+            # 保留最近的50条日志
+            if len(task.logs) > 50:
+                task.logs = task.logs[-50:]
+            
+            # 从活跃任务列表中移除
+            with self.lock:
+                if task.task_id in self.active_tasks:
+                    del self.active_tasks[task.task_id]
+            
+            # 通知任务队列有新的处理空间
+            self.task_available.set()
+            
+        else:
+            # 超过重试次数，标记为失败
+            task.status = "failed"
+            task.completed_at = datetime.now()
+            task.event.set()  # 设置事件，通知等待的线程
+            
+            # 任务最终失败后清理资源
+            self._cleanup_task_resources(task)
+            
+            # 更新当前操作信息
+            current_time = datetime.now()
+            task.logs.append({
+                'timestamp': current_time,
+                'message': f"任务最终失败 (已重试{task.retry_count}次): {error}",
+                'level': 'error'
+            })
+            
+            # 保留最近的50条日志
+            if len(task.logs) > 50:
+                task.logs = task.logs[-50:]
+            
+            # 从活跃任务列表中移除
+            with self.lock:
+                if task.task_id in self.active_tasks:
+                    del self.active_tasks[task.task_id]
+            
+            # 通知任务队列有新的处理空间
+            self.task_available.set()
+            
+            # 更新数据库中的任务状态
+            self._schedule_database_update(task)
 
     def get_task_status(self, task_id: str) -> Optional[Dict[str, Any]]:
         """
@@ -672,6 +949,156 @@ class EnhancedTranslationQueue:
         """
         with self.lock:
             return len([t for t in self.tasks.values() if t.status == "failed"])
+
+    def recycle_idle_connections(self) -> Dict[str, Any]:
+        """
+        回收闲置的数据库连接
+        
+        该方法会关闭所有空闲的数据库连接并强制回收连接池中的资源
+        对于长时间运行的应用程序，定期调用此方法可以防止连接泄漏
+        
+        Returns:
+            回收结果的状态信息
+        """
+        from flask import current_app
+        from sqlalchemy import create_engine, text
+        import time
+        
+        try:
+            # 获取当前数据库引擎
+            engine = current_app.extensions['sqlalchemy'].db.engine
+            
+            # 记录回收前的连接池状态
+            before_status = {
+                'pool_size': engine.pool.size(),
+                'checkedin': engine.pool.checkedin(),
+                'checkedout': engine.pool.checkedout(),
+                'overflow': engine.pool.overflow()
+            }
+            
+            # 创建一个临时连接执行回收命令
+            start_time = time.time()
+            with engine.connect() as conn:
+                # 执行连接池回收
+                conn.execute(text("/* 回收空闲连接 */ SELECT 1"))
+                
+            # 强制回收所有空闲连接
+            engine.dispose()
+            
+            # 记录回收后的连接池状态
+            after_status = {
+                'pool_size': engine.pool.size(),
+                'checkedin': engine.pool.checkedin(),
+                'checkedout': engine.pool.checkedout(),
+                'overflow': engine.pool.overflow()
+            }
+            
+            execution_time = time.time() - start_time
+            
+            return {
+                'success': True,
+                'message': '成功回收空闲连接',
+                'before': before_status,
+                'after': after_status,
+                'execution_time': execution_time
+            }
+        
+        except Exception as e:
+            return {
+                'success': False,
+                'message': f'回收连接失败: {str(e)}',
+                'error': str(e)
+            }
+    
+    def _cleanup_task_resources(self, task: TranslationTask) -> None:
+        """
+        清理任务资源
+        
+        当任务完成或失败时，清理相关资源，确保内存和数据库连接被正确释放
+        
+        Args:
+            task: 要清理资源的任务
+        """
+        try:
+            # 记录开始清理
+            self.logger.info(f"清理任务资源: {task.task_id}, 用户: {task.user_id}")
+            
+            # 确保数据库会话被关闭
+            from flask import current_app
+            db = current_app.extensions['sqlalchemy'].db
+            
+            # 如果任务有自己的会话，关闭它
+            if hasattr(task, 'db_session') and task.db_session:
+                try:
+                    task.db_session.close()
+                    self.logger.info(f"已关闭任务专用数据库会话: {task.task_id}")
+                except Exception as e:
+                    self.logger.warning(f"关闭任务数据库会话失败: {str(e)}")
+            
+            # 强制垃圾回收大型对象
+            if hasattr(task, 'result') and task.result:
+                task.result = None
+            
+            # 清理任务中可能持有的大型数据
+            for attr in ['annotations', 'annotation_json']:
+                if hasattr(task, attr) and getattr(task, attr):
+                    setattr(task, attr, None)
+            
+            # 如果任务持续时间超过30分钟，建议回收一下连接池
+            if task.started_at and task.completed_at:
+                duration = (task.completed_at - task.started_at).total_seconds()
+                if duration > 1800:  # 30分钟
+                    self.logger.info(f"长时间运行任务({duration:.1f}秒)完成，建议回收连接池")
+                    
+            self.logger.info(f"任务资源清理完成: {task.task_id}")
+            
+        except Exception as e:
+            self.logger.error(f"清理任务资源时出错: {str(e)}")
+
+    def schedule_db_connection_recycling(self, interval=None):
+        """
+        启动定期回收数据库连接的后台线程
+        
+        Args:
+            interval: 回收间隔（秒），默认使用self.db_recycle_interval
+        """
+        if interval is not None:
+            self.db_recycle_interval = interval
+            
+        def _recycle_job():
+            self.logger.info(f"启动数据库连接定期回收线程，间隔：{self.db_recycle_interval}秒")
+            while self.running:
+                try:
+                    # 等待指定间隔
+                    time.sleep(self.db_recycle_interval)
+                    
+                    # 如果任务队列不再运行，退出循环
+                    if not self.running:
+                        break
+                    
+                    # 执行回收
+                    self.logger.info("执行定期数据库连接回收")
+                    result = self.recycle_idle_connections()
+                    
+                    if result and result.get('success'):
+                        self.logger.info(f"定期回收数据库连接成功：回收前 {result['before']}，回收后 {result['after']}")
+                    else:
+                        self.logger.warning(f"定期回收数据库连接失败：{result.get('message', '未知错误')}")
+                        
+                except Exception as e:
+                    self.logger.error(f"定期回收数据库连接异常: {str(e)}")
+                    # 出错后短暂暂停，避免频繁失败
+                    time.sleep(60)
+                    
+        # 启动后台线程
+        recycle_thread = threading.Thread(
+            target=_recycle_job,
+            name="db_connection_recycler",
+            daemon=True  # 使用守护线程，主线程结束时自动结束
+        )
+        recycle_thread.start()
+        
+        self.logger.info("数据库连接定期回收线程已启动")
 
 # 创建全局翻译队列实例
 translation_queue = EnhancedTranslationQueue()

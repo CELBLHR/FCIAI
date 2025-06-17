@@ -139,6 +139,13 @@ class EnhancedThreadPoolExecutor:
             TaskType.LOW_PRIORITY: queue.PriorityQueue(),
         }
         
+        # 监控指标
+        self.last_error_time = 0
+        self.error_count = 0
+        self.last_recovery_time = 0
+        self.recovery_count = 0
+        self.executor_creation_time = 0
+        
         # 日志记录器
         self.logger = logging.getLogger(__name__)
     
@@ -173,33 +180,45 @@ class EnhancedThreadPoolExecutor:
             else:
                 self._create_executors()
                 self.initialized = True
+            
+            # 记录恢复次数和时间
+            if self.initialized:
+                self.last_recovery_time = time.time()
+                self.recovery_count += 1
     
     def _create_executors(self) -> None:
         """创建线程池执行器"""
-        self.io_executor = ThreadPoolExecutor(
-            max_workers=self.io_bound_workers,
-            thread_name_prefix=f"{self.thread_name_prefix}_io"
-        )
-        
-        self.cpu_executor = ThreadPoolExecutor(
-            max_workers=self.cpu_bound_workers,
-            thread_name_prefix=f"{self.thread_name_prefix}_cpu"
-        )
-        
-        self.running = True
-        
-        # 启动调度线程
-        self.scheduler_thread = threading.Thread(
-            target=self._scheduler_loop,
-            name=f"{self.thread_name_prefix}_scheduler",
-            daemon=True
-        )
-        self.scheduler_thread.start()
-        
-        self.logger.info(
-            f"线程池已创建 - IO线程: {self.io_bound_workers}, "
-            f"CPU线程: {self.cpu_bound_workers}"
-        )
+        try:
+            self.io_executor = ThreadPoolExecutor(
+                max_workers=self.io_bound_workers,
+                thread_name_prefix=f"{self.thread_name_prefix}_io"
+            )
+            
+            self.cpu_executor = ThreadPoolExecutor(
+                max_workers=self.cpu_bound_workers,
+                thread_name_prefix=f"{self.thread_name_prefix}_cpu"
+            )
+            
+            self.running = True
+            self.executor_creation_time = time.time()
+            
+            # 启动调度线程
+            self.scheduler_thread = threading.Thread(
+                target=self._scheduler_loop,
+                name=f"{self.thread_name_prefix}_scheduler",
+                daemon=True
+            )
+            self.scheduler_thread.start()
+            
+            self.logger.info(
+                f"线程池已创建 - IO线程: {self.io_bound_workers}, "
+                f"CPU线程: {self.cpu_bound_workers}"
+            )
+        except Exception as e:
+            self.logger.error(f"创建线程池执行器失败: {str(e)}")
+            self.last_error_time = time.time()
+            self.error_count += 1
+            raise
     
     def _shutdown_executors(self) -> None:
         """关闭线程池执行器"""
@@ -275,34 +294,62 @@ class EnhancedThreadPoolExecutor:
         while self.running:
             try:
                 # 按优先级顺序检查队列
+                tasks_processed = False
                 for task_type in TaskType:
-                    if not self.task_queues[task_type].empty():
-                        # 获取任务
-                        _, task = self.task_queues[task_type].get_nowait()
-                        
-                        # 选择执行器
-                        executor = (self.io_executor 
-                                  if task.task_type in (TaskType.IO_BOUND, TaskType.HIGH_PRIORITY)
-                                  else self.cpu_executor)
-                        
-                        # 提交任务到执行器
-                        future = executor.submit(
-                            self._execute_task,
-                            task
-                        )
-                        
-                        # 添加回调
-                        future.add_done_callback(
-                            lambda f, t=task: self._task_done_callback(f, t)
-                        )
-                        
-                        break
+                    try:
+                        if not self.task_queues[task_type].empty():
+                            # 获取任务
+                            _, task = self.task_queues[task_type].get_nowait()
+                            
+                            # 检查任务是否已经被取消
+                            if task.status == TaskStatus.CANCELED:
+                                continue
+                                
+                            # 选择执行器
+                            executor = (self.io_executor 
+                                      if task.task_type in (TaskType.IO_BOUND, TaskType.HIGH_PRIORITY)
+                                      else self.cpu_executor)
+                            
+                            # 提交任务到执行器
+                            future = executor.submit(
+                                self._execute_task,
+                                task
+                            )
+                            
+                            # 添加回调
+                            future.add_done_callback(
+                                lambda f, t=task: self._task_done_callback(f, t)
+                            )
+                            
+                            tasks_processed = True
+                            break
+                    except Exception as e:
+                        self.logger.error(f"处理队列 {task_type.name} 任务时出错: {str(e)}")
+                        self.last_error_time = time.time()
+                        self.error_count += 1
                 
-                # 短暂休眠以避免CPU过度使用
-                threading.Event().wait(0.01)
+                # 如果没有处理任务，短暂休眠以避免CPU过度使用
+                if not tasks_processed:
+                    threading.Event().wait(0.01)
                 
             except Exception as e:
                 self.logger.error(f"调度器错误: {str(e)}")
+                self.last_error_time = time.time()
+                self.error_count += 1
+                
+                # 异常发生后短暂休眠，避免持续出错导致CPU使用率过高
+                time.sleep(0.1)
+                
+                # 检查线程池是否需要重启
+                try:
+                    if (not hasattr(self, 'io_executor') or 
+                        not hasattr(self, 'cpu_executor') or
+                        self.io_executor._shutdown or 
+                        self.cpu_executor._shutdown):
+                        self.logger.warning("检测到线程池已关闭，尝试重新创建")
+                        self._create_executors()
+                except Exception as e2:
+                    self.logger.error(f"重新创建线程池失败: {str(e2)}")
     
     def _execute_task(self, task: Task) -> Any:
         """
@@ -315,6 +362,11 @@ class EnhancedThreadPoolExecutor:
             任务执行结果
         """
         try:
+            # 检查任务是否已取消
+            if task.should_cancel():
+                task.status = TaskStatus.CANCELED
+                return None
+                
             # 更新任务状态
             task.status = TaskStatus.RUNNING
             task.start_time = time.time()
@@ -323,6 +375,7 @@ class EnhancedThreadPoolExecutor:
             if task.timeout:
                 # 使用超时
                 timer = threading.Timer(task.timeout, self._task_timeout, args=[task])
+                timer.daemon = True  # 设置为守护线程，避免阻止程序退出
                 timer.start()
                 try:
                     result = task.func(*task.args, **task.kwargs)
@@ -336,6 +389,8 @@ class EnhancedThreadPoolExecutor:
             
         except Exception as e:
             self.logger.error(f"任务执行错误 - ID: {task.task_id}, 错误: {str(e)}")
+            self.last_error_time = time.time()
+            self.error_count += 1
             raise
     
     def _task_done_callback(self, future, task: Task) -> None:
@@ -396,13 +451,25 @@ class EnhancedThreadPoolExecutor:
             for task in self.tasks.values():
                 status_counts[task.status.value] += 1
             
+            # 线程池运行时间
+            uptime = 0
+            if self.executor_creation_time > 0:
+                uptime = time.time() - self.executor_creation_time
+            
             return {
                 'max_workers': self.max_workers,
                 'io_bound_workers': self.io_bound_workers,
                 'cpu_bound_workers': self.cpu_bound_workers,
                 'task_status_counts': status_counts,
                 'total_tasks_created': self.task_count,
-                'active_tasks': len(self.tasks)
+                'active_tasks': len(self.tasks),
+                'error_count': self.error_count,
+                'recovery_count': self.recovery_count,
+                'last_error_time': self.last_error_time,
+                'last_recovery_time': self.last_recovery_time,
+                'uptime': uptime,
+                'io_active_threads': self.get_io_active_count(),
+                'cpu_active_threads': self.get_cpu_active_count()
             }
             
     def get_io_active_count(self) -> int:
@@ -445,6 +512,47 @@ class EnhancedThreadPoolExecutor:
         """
         with self.lock:
             return sum(1 for task in self.tasks.values() if task.status == TaskStatus.COMPLETED)
+
+    def get_health_status(self) -> Dict[str, Any]:
+        """
+        获取线程池健康状态
+        
+        Returns:
+            健康状态信息字典
+        """
+        try:
+            io_active = self.get_io_active_count()
+            cpu_active = self.get_cpu_active_count()
+            
+            # 判断是否健康
+            is_healthy = (
+                self.initialized and 
+                self.running and
+                hasattr(self, 'io_executor') and 
+                hasattr(self, 'cpu_executor') and
+                not getattr(self.io_executor, '_shutdown', False) and
+                not getattr(self.cpu_executor, '_shutdown', False) and
+                io_active > 0  # 至少有一个IO线程活跃
+            )
+            
+            return {
+                'healthy': is_healthy,
+                'initialized': self.initialized,
+                'running': self.running,
+                'io_executor_alive': hasattr(self, 'io_executor') and not getattr(self.io_executor, '_shutdown', False),
+                'cpu_executor_alive': hasattr(self, 'cpu_executor') and not getattr(self.cpu_executor, '_shutdown', False),
+                'io_active_threads': io_active,
+                'cpu_active_threads': cpu_active,
+                'scheduler_thread_alive': hasattr(self, 'scheduler_thread') and self.scheduler_thread.is_alive(),
+                'uptime': time.time() - self.executor_creation_time if self.executor_creation_time > 0 else 0,
+                'last_error': self.last_error_time,
+                'error_count': self.error_count
+            }
+        except Exception as e:
+            return {
+                'healthy': False,
+                'error': str(e)
+            }
 
 # 创建全局线程池执行器实例
 thread_pool = EnhancedThreadPoolExecutor() 

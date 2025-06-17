@@ -46,12 +46,11 @@
                             注册审批
                         </a>
 
-                        {# 监控页面暂未实现
-                        <a href="{{ url_for('monitor.monitor_page') }}" class="nav-link {% if request.endpoint == 'monitor.monitor_page' %}active{% endif %}">
+                        <!-- 系统监控页面 -->
+                        <a href="{{ url_for('main.system_monitoring') }}" class="nav-link {% if request.endpoint == 'main.system_monitoring' %}active{% endif %}">
                             <i class="bi bi-speedometer2"></i>
                             系统监控
                         </a>
-                        #}
                         <a href="{{ url_for('db_management.db_stats_page') }}" class="nav-link {% if request.endpoint == 'db_management.db_stats_page' %}active{% endif %}">
                             <i class="bi bi-database"></i>
                             数据库连接池
