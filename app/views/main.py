@@ -842,146 +842,97 @@ def allowed_pdf_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in PDF_ALLOWED_EXTENSIONS
 
 
-@main.route('/pdf_annotate')
-@login_required
-def pdf_annotate():
-    """PDF注释页面"""
-    try:
-        # 添加详细的日志
-        logger.info("访问 pdf_annotate 页面")
-        return render_template('main/pdf_annotate.html')
-    except Exception as e:
-        logger.error(f"渲染 pdf_annotate 页面出错: {str(e)}")
-        # 返回一个简单的错误页面，避免模板渲染问题
-        return f"PDF注释功能临时不可用: {str(e)}", 500
-
-
-@main.route('/upload_pdf', methods=['POST'])
-@login_required
-def upload_pdf():
-    try:
-        if 'file' not in request.files:
-            print("Debug: No file part in request")
-            return jsonify({'error': '没有文件部分'}), 400
-
-        file = request.files['file']
-        if file.filename == '':
-            print("Debug: No selected file")
-            return jsonify({'error': '没有选择文件'}), 400
-
-        if not allowed_pdf_file(file.filename):
-            print(f"Debug: Invalid file type: {file.filename}")
-            return jsonify({'error': '不允许的文件类型'}), 400
-
-        # 生成安全的文件名和唯一的存储文件名
-        original_filename = secure_filename(file.filename)
-        print(original_filename)
-        stored_filename = f"{uuid.uuid4().hex}.pdf"
-
-        # 确保上传文件夹存在
-        upload_folder = current_app.config['UPLOAD_FOLDER']
-        if not os.path.exists(upload_folder):
-            os.makedirs(upload_folder)
-            print(f"Debug: Created upload folder: {upload_folder}")
-
-        # 创建用户PDF目录
-        user_pdf_dir = os.path.join(upload_folder, f"{current_user.username}_pdfs")
-        print(f"Debug: PDF upload directory path: {user_pdf_dir}")
-
-        if not os.path.exists(user_pdf_dir):
-            os.makedirs(user_pdf_dir)
-            print(f"Debug: Created PDF upload directory: {user_pdf_dir}")
-
-        # 保存文件
-        file_path = os.path.join(user_pdf_dir, stored_filename)
-        file_path = os.path.abspath(file_path)  # 转换为绝对路径
-        print(f"Debug: Absolute file path for saving: {file_path}")
-
-        file.save(file_path)
-        print(f"Debug: PDF file saved to: {file_path}")
-
-        # 验证文件是否成功保存
-        if not os.path.exists(file_path):
-            raise Exception(f"文件保存失败，路径: {file_path}")
-
-        # 检查文件权限
-        if not os.access(file_path, os.R_OK):
-            raise Exception(f"文件无法访问，请检查权限: {file_path}")
-
-        # 生成完整的URL，包含域名和协议
-        file_url = url_for('main.get_pdf', filename=stored_filename, _external=True)
-        print(f"Debug: Generated PDF URL: {file_url}")
-
-        return jsonify({
-            'message': '文件上传成功',
-            'filename': original_filename,
-            'file_url': file_url,
-            'file_path': file_path  # 添加服务器端文件路径
-        })
-
-    except Exception as e:
-        print(f"PDF Upload error: {str(e)}")
-        # 如果文件已经保存，则删除
-        if 'file_path' in locals() and os.path.exists(file_path):
-            try:
-                os.remove(file_path)
-                print(f"Debug: Cleaned up failed upload: {file_path}")
-            except Exception as cleanup_error:
-                print(f"Debug: Failed to clean up file: {cleanup_error}")
-        return jsonify({'error': f'上传失败: {str(e)}'}), 500
-
-
 @main.route('/pdf/<filename>')
 @login_required
 def get_pdf(filename):
     try:
         # 获取上传文件夹路径
         upload_folder = current_app.config['UPLOAD_FOLDER']
+        logger.info(f"PDF请求: {filename}, 上传文件夹: {upload_folder}")
+        
         if not os.path.exists(upload_folder):
-            print(f"Debug: Upload folder does not exist: {upload_folder}")
+            logger.error(f"上传文件夹不存在: {upload_folder}")
             return jsonify({'error': '上传文件夹不存在'}), 404
 
         # 构建用户PDF目录路径
         user_pdf_dir = os.path.join(upload_folder, f"{current_user.username}_pdfs")
-        print(f"Debug: Attempting to serve PDF from: {user_pdf_dir}")
+        logger.info(f"尝试从目录提供PDF: {user_pdf_dir}")
 
         if not os.path.exists(user_pdf_dir):
-            print(f"Debug: PDF directory does not exist: {user_pdf_dir}")
-            return jsonify({'error': '文件目录不存在'}), 404
-
+            # 尝试创建目录
+            try:
+                os.makedirs(user_pdf_dir, exist_ok=True)
+                logger.info(f"创建了PDF目录: {user_pdf_dir}")
+            except Exception as e:
+                logger.error(f"无法创建PDF目录: {user_pdf_dir}, 错误: {str(e)}")
+                return jsonify({'error': f'无法创建PDF目录: {str(e)}'}), 500
+                
         # 构建完整的文件路径
         file_path = os.path.join(user_pdf_dir, filename)
         file_path = os.path.abspath(file_path)  # 转换为绝对路径
-        print(f"Debug: Full absolute file path: {file_path}")
+        logger.info(f"完整的PDF文件路径: {file_path}")
 
         if not os.path.exists(file_path):
-            print(f"Debug: PDF file not found: {file_path}")
-            return jsonify({'error': '文件不存在'}), 404
+            logger.error(f"PDF文件不存在: {file_path}")
+            
+            # 检查是否存在于其他可能的位置
+            alt_paths = [
+                os.path.join(upload_folder, filename),  # 直接在上传文件夹中
+                os.path.join(upload_folder, 'pdf', filename),  # 在pdf子文件夹中
+                os.path.join(current_app.root_path, 'static', 'uploads', filename)  # 在静态文件夹中
+            ]
+            
+            for alt_path in alt_paths:
+                if os.path.exists(alt_path):
+                    logger.info(f"在替代位置找到PDF文件: {alt_path}")
+                    file_path = alt_path
+                    break
+            else:
+                return jsonify({'error': '文件不存在'}), 404
 
-        if not os.access(file_path, os.R_OK):
-            print(f"Debug: Cannot read PDF file: {file_path}")
-            return jsonify({'error': '文件无法访问'}), 403
-
-        print(f"Debug: Serving PDF file: {file_path}")
+        # 检查文件权限
         try:
+            # 尝试打开文件进行读取测试
+            with open(file_path, 'rb') as f:
+                f.read(1)  # 只读取1字节进行测试
+            logger.info(f"文件权限检查通过: {file_path}")
+        except PermissionError:
+            logger.error(f"无法读取PDF文件(权限错误): {file_path}")
+            # 尝试修改文件权限
+            try:
+                import stat
+                os.chmod(file_path, stat.S_IRUSR | stat.S_IWUSR | stat.S_IRGRP | stat.S_IROTH)
+                logger.info(f"已修改文件权限: {file_path}")
+            except Exception as e:
+                logger.error(f"无法修改文件权限: {str(e)}")
+                return jsonify({'error': f'文件无法访问(权限错误): {str(e)}'}), 403
+        except Exception as e:
+            logger.error(f"文件读取测试失败: {str(e)}")
+            return jsonify({'error': f'文件无法访问: {str(e)}'}), 403
+
+        logger.info(f"准备提供PDF文件: {file_path}")
+        try:
+            # 使用安全的方式提供文件
             response = send_file(
                 file_path,
                 mimetype='application/pdf',
                 as_attachment=False,
                 download_name=filename
             )
+            # 添加必要的CORS和缓存控制头
             response.headers['Access-Control-Allow-Origin'] = '*'
             response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
             response.headers['Pragma'] = 'no-cache'
             response.headers['Expires'] = '0'
+            logger.info(f"PDF文件已成功提供: {file_path}")
             return response
 
         except Exception as e:
-            print(f"Debug: Error serving file: {str(e)}")
+            logger.error(f"提供PDF文件时出错: {str(e)}")
             raise
 
     except Exception as e:
-        print(f"PDF Serve error: {str(e)}")
+        logger.error(f"PDF提供错误: {str(e)}")
         return jsonify({'error': f'获取文件失败: {str(e)}'}), 500
 
 
@@ -1777,3 +1728,104 @@ def system_monitoring():
         return redirect(url_for('main.index'))
     
     return render_template('main/system_monitoring.html', user=current_user)
+
+
+@main.route('/pdf_annotate')
+@login_required
+def pdf_annotate():
+    """PDF注释页面"""
+    try:
+        # 添加详细的日志
+        logger.info("访问 pdf_annotate 页面")
+        return render_template('main/pdf_annotate.html')
+    except Exception as e:
+        logger.error(f"渲染 pdf_annotate 页面出错: {str(e)}")
+        # 返回一个简单的错误页面，避免模板渲染问题
+        return f"PDF注释功能临时不可用: {str(e)}", 500
+
+
+@main.route('/upload_pdf', methods=['POST'])
+@login_required
+def upload_pdf():
+    try:
+        if 'file' not in request.files:
+            logger.error("没有文件部分在请求中")
+            return jsonify({'error': '没有文件部分'}), 400
+
+        file = request.files['file']
+        if file.filename == '':
+            logger.error("没有选择文件")
+            return jsonify({'error': '没有选择文件'}), 400
+
+        if not allowed_pdf_file(file.filename):
+            logger.error(f"不允许的文件类型: {file.filename}")
+            return jsonify({'error': '不允许的文件类型'}), 400
+
+        # 生成安全的文件名和唯一的存储文件名
+        original_filename = secure_filename(file.filename)
+        logger.info(f"安全文件名: {original_filename}")
+        stored_filename = f"{uuid.uuid4().hex}.pdf"
+
+        # 确保上传文件夹存在
+        upload_folder = current_app.config['UPLOAD_FOLDER']
+        if not os.path.exists(upload_folder):
+            os.makedirs(upload_folder)
+            logger.info(f"创建上传文件夹: {upload_folder}")
+
+        # 创建用户PDF目录
+        user_pdf_dir = os.path.join(upload_folder, f"{current_user.username}_pdfs")
+        logger.info(f"PDF上传目录路径: {user_pdf_dir}")
+
+        if not os.path.exists(user_pdf_dir):
+            os.makedirs(user_pdf_dir)
+            logger.info(f"创建PDF上传目录: {user_pdf_dir}")
+
+        # 保存文件
+        file_path = os.path.join(user_pdf_dir, stored_filename)
+        file_path = os.path.abspath(file_path)  # 转换为绝对路径
+        logger.info(f"保存文件的绝对路径: {file_path}")
+
+        file.save(file_path)
+        logger.info(f"PDF文件已保存到: {file_path}")
+
+        # 验证文件是否成功保存
+        if not os.path.exists(file_path):
+            raise Exception(f"文件保存失败，路径: {file_path}")
+
+        # 检查文件权限并尝试修复
+        try:
+            with open(file_path, 'rb') as f:
+                f.read(1)  # 测试读取
+        except PermissionError:
+            # 尝试修改文件权限
+            try:
+                import stat
+                os.chmod(file_path, stat.S_IRUSR | stat.S_IWUSR | stat.S_IRGRP | stat.S_IROTH)
+                logger.info(f"已修改文件权限: {file_path}")
+            except Exception as e:
+                logger.error(f"无法修改文件权限: {str(e)}")
+                raise Exception(f"文件无法访问，权限问题: {str(e)}")
+        except Exception as e:
+            raise Exception(f"文件读取测试失败: {str(e)}")
+
+        # 生成完整的URL，包含域名和协议
+        file_url = url_for('main.get_pdf', filename=stored_filename, _external=True)
+        logger.info(f"生成的PDF URL: {file_url}")
+
+        return jsonify({
+            'message': '文件上传成功',
+            'filename': original_filename,
+            'file_url': file_url,
+            'file_path': file_path  # 添加服务器端文件路径
+        })
+
+    except Exception as e:
+        logger.error(f"PDF上传错误: {str(e)}")
+        # 如果文件已经保存，则删除
+        if 'file_path' in locals() and os.path.exists(file_path):
+            try:
+                os.remove(file_path)
+                logger.info(f"清理失败的上传: {file_path}")
+            except Exception as cleanup_error:
+                logger.error(f"无法清理文件: {cleanup_error}")
+        return jsonify({'error': f'上传失败: {str(e)}'}), 500
