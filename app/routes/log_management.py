@@ -9,6 +9,7 @@ from flask import Blueprint, request, jsonify, abort
 from flask_login import login_required, current_user
 
 from app.utils.logger import log_manager
+from app.utils.timezone_helper import parse_datetime
 
 # 创建Blueprint
 router = Blueprint('log_management', __name__)
@@ -45,41 +46,13 @@ def query_logs():
 
         # 改进的时间解析逻辑
         if data.get('start_time') and data.get('start_time').strip():
-            start_time_str = data.get('start_time').strip()
-            try:
-                # 尝试多种时间格式
-                if 'T' in start_time_str:
-                    # ISO格式: 2025-06-01T23:14:33 或 2025-06-01T23:14:33Z
-                    start_time = datetime.fromisoformat(start_time_str.replace('Z', '+00:00'))
-                else:
-                    # 标准格式: 2025-06-01 23:14:33
-                    start_time = datetime.strptime(start_time_str, '%Y-%m-%d %H:%M:%S')
-            except ValueError:
-                try:
-                    # 尝试只有日期的格式: 2025-06-01
-                    start_time = datetime.strptime(start_time_str, '%Y-%m-%d')
-                except ValueError:
-                    # 如果都失败，记录错误但不中断
-                    print(f"无法解析开始时间: {start_time_str}")
+            start_time = parse_datetime(data.get('start_time').strip())
 
         if data.get('end_time') and data.get('end_time').strip():
-            end_time_str = data.get('end_time').strip()
-            try:
-                # 尝试多种时间格式
-                if 'T' in end_time_str:
-                    # ISO格式: 2025-06-01T23:14:33 或 2025-06-01T23:14:33Z
-                    end_time = datetime.fromisoformat(end_time_str.replace('Z', '+00:00'))
-                else:
-                    # 标准格式: 2025-06-01 23:14:33
-                    end_time = datetime.strptime(end_time_str, '%Y-%m-%d %H:%M:%S')
-            except ValueError:
-                try:
-                    # 尝试只有日期的格式: 2025-06-01，设置为当天结束
-                    end_time = datetime.strptime(end_time_str, '%Y-%m-%d')
-                    end_time = end_time.replace(hour=23, minute=59, second=59, microsecond=999999)
-                except ValueError:
-                    # 如果都失败，记录错误但不中断
-                    print(f"无法解析结束时间: {end_time_str}")
+            end_time = parse_datetime(data.get('end_time').strip())
+            # 如果只有日期没有时间，设置为当天结束
+            if end_time and end_time.hour == 0 and end_time.minute == 0 and end_time.second == 0:
+                end_time = end_time.replace(hour=23, minute=59, second=59, microsecond=999999)
 
         level = data.get('level')
         limit = int(data.get('limit', 100))
@@ -105,21 +78,14 @@ def query_logs():
             print(f"第一条日志时间: {logs[0].get('timestamp_str', 'N/A')}")
             print(f"最后一条日志时间: {logs[-1].get('timestamp_str', 'N/A')}")
 
-        return jsonify({
-            "logs": logs,
-            "debug_info": {
-                "query_params": {
-                    "logger_name": logger_name,
-                    "start_time": start_time.isoformat() if start_time else None,
-                    "end_time": end_time.isoformat() if end_time else None,
-                    "level": level,
-                    "limit": limit
-                },
-                "result_count": len(logs)
-            }
-        })
+        # 确保响应是可序列化的JSON格式
+        return jsonify({'logs': logs, 'total': len(logs)})
+
     except Exception as e:
-        abort(500, str(e))
+        import logging
+        logger = logging.getLogger('app.routes.log_management')
+        logger.error(f"查询日志失败: {str(e)}")
+        return jsonify({'error': f'查询日志失败: {str(e)}', 'logs': [], 'total': 0}), 500
 
 @router.route('/api/logs/level', methods=['POST'])
 @login_required

@@ -2,8 +2,8 @@
 文件上传记录模型
 """
 from datetime import datetime
-import pytz
 from app import db
+from app.utils.timezone_helper import now_with_timezone, datetime_to_isoformat, format_datetime
 
 class UploadRecord(db.Model):
     """文件上传记录"""
@@ -15,7 +15,7 @@ class UploadRecord(db.Model):
     stored_filename = db.Column(db.String(255), nullable=False)  # 存储的文件名
     file_path = db.Column(db.String(255), nullable=False)  # 存储路径
     file_size = db.Column(db.Integer, nullable=False)  # 文件大小(字节)
-    upload_time = db.Column(db.DateTime(timezone=True), default=lambda: datetime.now(pytz.timezone('Asia/Shanghai')))  # 上传时间
+    upload_time = db.Column(db.DateTime(timezone=True), default=now_with_timezone)  # 上传时间
     status = db.Column(db.String(20), default='pending')  # 状态: pending, completed, failed
     error_message = db.Column(db.String(255))  # 错误信息
 
@@ -31,7 +31,7 @@ class UploadRecord(db.Model):
             'stored_filename': self.stored_filename,
             'file_path': self.file_path,
             'file_size': self.file_size,
-            'upload_time': self.upload_time.isoformat(),
+            'upload_time': format_datetime(self.upload_time),
             'status': self.status,
             'error_message': self.error_message
         }

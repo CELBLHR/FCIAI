@@ -60,22 +60,6 @@ def get_field(text: str) -> str:
         logger.error(f'领域分析异常: {str(e)}')
         return "通用"
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 def translate_by_fields(field: str, text: str, stop_words: list, custom_translations: dict,
                        source_language: str, target_language: str) -> str:
     """

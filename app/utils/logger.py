@@ -10,6 +10,7 @@ import re
 import glob
 from typing import Optional, Dict, Any, Union, List
 from datetime import datetime
+from app.utils.timezone_helper import parse_datetime
 
 class LogManager:
     """日志管理器，支持控制台和文件输出"""
@@ -229,8 +230,8 @@ class LogManager:
                 if os.path.exists(backup_file):
                     logs.extend(self._read_log_file(backup_file, name, start_time, end_time, level))
 
-            # 按时间排序并限制数量
-            logs.sort(key=lambda x: x['timestamp'], reverse=True)
+            # 按时间戳字符串排序，而不是使用timestamp对象
+            logs.sort(key=lambda x: x['timestamp_str'] if x.get('timestamp_str') else '', reverse=True)
             return logs[:limit]
 
         except Exception as e:
@@ -276,12 +277,18 @@ class LogManager:
                                logger_name in entry_logger):
                             continue
 
-                    # 过滤时间范围
-                    if start_time and log_entry.get('timestamp'):
-                        if log_entry['timestamp'] < start_time:
+                    # 过滤时间范围 - 使用timestamp_str进行比较
+                    # 因为timestamp已经是ISO格式字符串，我们需要使用timestamp_str进行比较
+                    if start_time and log_entry.get('timestamp_str'):
+                        # 解析日志条目的时间戳
+                        entry_time = parse_datetime(log_entry.get('timestamp_str'))
+                        if entry_time and entry_time < start_time:
                             continue
-                    if end_time and log_entry.get('timestamp'):
-                        if log_entry['timestamp'] > end_time:
+                    
+                    if end_time and log_entry.get('timestamp_str'):
+                        # 解析日志条目的时间戳
+                        entry_time = parse_datetime(log_entry.get('timestamp_str'))
+                        if entry_time and entry_time > end_time:
                             continue
 
                     # 过滤日志级别
@@ -301,74 +308,55 @@ class LogManager:
         解析日志行
 
         Args:
-            line: 日志行内容
+            line: 日志行文本
 
         Returns:
-            解析后的日志记录字典
+            解析后的日志信息字典
         """
-        try:
-            # 尝试多种日志格式
-            patterns = [
-                # 标准格式: 2025-06-01 22:39:21 - app - INFO - 消息内容
-                r'(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}) - ([^-]+?) - ([^-]+?) - (.+)',
-                # 带毫秒的格式: 2025-06-01 22:39:21,123 - app - INFO - 消息内容
-                r'(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2},\d+) - ([^-]+?) - ([^-]+?) - (.+)',
-                # 简化格式: 2025-06-01 22:39:21 app INFO 消息内容
-                r'(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}) (\S+) (\S+) (.+)',
-            ]
-
-            for pattern in patterns:
-                match = re.match(pattern, line)
-                if match:
-                    timestamp_str, logger, level, message = match.groups()
-
-                    # 解析时间戳
-                    timestamp = None
-                    try:
-                        # 处理带毫秒的时间戳
-                        if ',' in timestamp_str:
-                            timestamp = datetime.strptime(timestamp_str.strip(), '%Y-%m-%d %H:%M:%S,%f')
-                        else:
-                            timestamp = datetime.strptime(timestamp_str.strip(), '%Y-%m-%d %H:%M:%S')
-                    except ValueError:
-                        try:
-                            # 尝试其他时间格式
-                            timestamp = datetime.fromisoformat(timestamp_str.strip().replace('Z', '+00:00'))
-                        except:
-                            timestamp = None
-
-                    return {
-                        'timestamp': timestamp,
-                        'timestamp_str': timestamp_str.strip(),
-                        'logger': logger.strip(),
-                        'level': level.strip(),
-                        'message': message.strip(),
-                        'raw_line': line
-                    }
-
-            # 如果所有格式都不匹配，尝试简单解析
-            if line.strip():
+        if not line.strip():
+            return None
+        
+        # 尝试匹配不同的日志格式
+        patterns = [
+            # 标准格式: 2023-05-01 12:34:56,789 - logger - LEVEL - message
+            r'(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2},\d+) - ([^-]+) - ([A-Z]+) - (.*)',
+            # 简化格式: 2023-05-01 12:34:56 - logger - LEVEL - message
+            r'(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}) - ([^-]+) - ([A-Z]+) - (.*)',
+            # ISO格式: 2023-05-01T12:34:56Z - logger - LEVEL - message
+            r'(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z?) - ([^-]+) - ([A-Z]+) - (.*)',
+        ]
+        
+        for pattern in patterns:
+            match = re.match(pattern, line)
+            if match:
+                timestamp_str, logger, level, message = match.groups()
+                
+                # 解析时间戳
+                timestamp = parse_datetime(timestamp_str.strip())
+                
+                # 将datetime对象转换为ISO格式字符串，以便JSON序列化
+                timestamp_iso = timestamp.isoformat() if timestamp else None
+                
                 return {
-                    'timestamp': None,
-                    'timestamp_str': '',
-                    'logger': 'unknown',
-                    'level': 'INFO',
-                    'message': line.strip(),
+                    'timestamp': timestamp_iso,  # 使用ISO格式字符串而不是datetime对象
+                    'timestamp_str': timestamp_str.strip(),
+                    'logger': logger.strip(),
+                    'level': level.strip(),
+                    'message': message.strip(),
                     'raw_line': line
                 }
-
-        except Exception as e:
-            # 即使解析失败，也返回原始行
+        
+        # 如果所有格式都不匹配，尝试简单解析
+        if line.strip():
             return {
                 'timestamp': None,
                 'timestamp_str': '',
-                'logger': 'parse_error',
-                'level': 'ERROR',
-                'message': f'解析失败: {line}',
-                'raw_line': line,
-                'error': str(e)
+                'logger': 'unknown',
+                'level': 'INFO',
+                'message': line.strip(),
+                'raw_line': line
             }
-
+        
         return None
 
     def set_level(self, name: str, level: str, handler_type: str = 'both'):

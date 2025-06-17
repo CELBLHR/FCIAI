@@ -1,8 +1,8 @@
 from datetime import datetime
-import pytz
 from werkzeug.security import generate_password_hash, check_password_hash
 from flask_login import UserMixin
 from app import db
+from app.utils.timezone_helper import now_with_timezone
 
 # 角色-权限关联表
 role_permissions = db.Table('role_permissions',
@@ -39,7 +39,7 @@ class User(UserMixin, db.Model):
     role_id = db.Column(db.Integer, db.ForeignKey('role.id'))
     role = db.relationship('Role', backref='users')
     status = db.Column(db.String(20), default='pending')  # pending, approved, rejected
-    register_time = db.Column(db.DateTime(timezone=True), default=lambda: datetime.now(pytz.timezone('Asia/Shanghai')))
+    register_time = db.Column(db.DateTime(timezone=True), default=now_with_timezone)
     approve_time = db.Column(db.DateTime(timezone=True))
     approve_user_id = db.Column(db.Integer, db.ForeignKey('users.id'))
     approve_user = db.relationship('User', remote_side=[id], backref='approved_users')

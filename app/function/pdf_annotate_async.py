@@ -101,7 +101,7 @@ class PDFAnnotationProcessor:
                 # 保存成功初始化的语言列表
                 self._current_languages = languages
 
-                logger.info(f"✓ EasyOCR读取器初始化成功，语言: {languages}")
+                logger.info(f" EasyOCR读取器初始化成功，语言: {languages}")
                 return
             except Exception as e:
                 logger.warning(f"语言组合 {languages} 初始化失败: {str(e)}")

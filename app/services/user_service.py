@@ -5,12 +5,12 @@
 import logging
 from typing import Dict, Any, Optional, Tuple
 from datetime import datetime
-import pytz
 from flask import current_app
 from flask_login import login_user
 
 from app import db
 from app.models.user import User, Role
+from app.utils.timezone_helper import now_with_timezone
 
 logger = logging.getLogger(__name__)
 
@@ -83,7 +83,7 @@ class UserService:
                 sso_subject=user_info.get('sub', ''),
                 status='approved',  # SSO用户默认已审批
                 role=default_role,
-                register_time=datetime.now(pytz.timezone('Asia/Shanghai'))
+                register_time=now_with_timezone()
             )
             
             # SSO用户不需要密码，设置一个随机值
@@ -121,7 +121,7 @@ class UserService:
             # 更新SSO相关信息
             user.sso_provider = provider
             user.sso_subject = user_info.get('sub', '')
-            user.last_login = datetime.now(pytz.timezone('Asia/Shanghai'))
+            user.last_login = now_with_timezone()
             
             # 处理组/角色映射
             UserService._update_user_roles_from_groups(user, user_info.get('groups', []))
@@ -182,7 +182,7 @@ class UserService:
             
             if login_success:
                 # 更新最后登录时间
-                user.last_login = datetime.now(pytz.timezone('Asia/Shanghai'))
+                user.last_login = now_with_timezone()
                 db.session.commit()
                 
                 logger.info(f"SSO用户登录成功: {user.username}")

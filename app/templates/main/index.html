@@ -1121,7 +1121,7 @@ function loadHistory(force = false) {
                             ${record.filename}
                         </div>
                         <div class="file-meta">
-                            <span class="upload-time">${record.upload_time}</span>
+                            <span class="upload-time">${formatDateTime(record.upload_time)}</span>
                             <span class="file-size">${formatFileSize(record.file_size)}</span>
                         </div>
                     </div>
@@ -1150,6 +1150,36 @@ function formatFileSize(bytes) {
     const sizes = ['B', 'KB', 'MB', 'GB'];
     const i = Math.floor(Math.log(bytes) / Math.log(k));
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+}
+
+function formatDateTime(dateTimeStr) {
+    if (!dateTimeStr) return '';
+    
+    try {
+        // 将字符串解析为日期对象
+        // 服务器返回的时间已经是正确的时区格式，但JavaScript会自动转为本地时区
+        // 此处确保正确处理时区问题
+        const date = new Date(dateTimeStr);
+        
+        // 检查日期是否有效
+        if (isNaN(date.getTime())) {
+            return dateTimeStr; // 如果解析失败，返回原始字符串
+        }
+        
+        // 使用中国时区格式化显示
+        return date.toLocaleString('zh-CN', {
+            year: 'numeric',
+            month: '2-digit',
+            day: '2-digit',
+            hour: '2-digit',
+            minute: '2-digit',
+            second: '2-digit',
+            hour12: false // 使用24小时制
+        });
+    } catch (e) {
+        console.error('日期格式化错误:', e);
+        return dateTimeStr; // 发生错误时返回原始字符串
+    }
 }
 
 function downloadFile(recordId) {

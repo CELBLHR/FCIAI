@@ -133,14 +133,18 @@ def create_app(config_name='development'):
     translation_queue.start_processor()
     logger.info("任务处理器已启动")
 
-    # 启动清理任务
-    from .tasks.cleanup import schedule_cleanup_task
-    schedule_cleanup_task()
-    
     # 启动数据库监控
     monitor_interval = int(os.getenv('DB_MONITOR_INTERVAL', 3600))  # 默认每小时监控一次
     db_monitor_thread = setup_db_monitoring(app, interval=monitor_interval)
     logger.info(f"数据库监控已启动，监控间隔: {monitor_interval}秒")
+    
+    # 启动清理任务 - 确保在任务处理器启动后执行
+    try:
+        from .tasks.cleanup import schedule_cleanup_task
+        cleanup_scheduler = schedule_cleanup_task()
+        logger.info("文件清理任务已调度")
+    except Exception as e:
+        logger.error(f"调度清理任务失败: {str(e)}")
 
     logger.info(f"应用已初始化 - 环境: {config_name}")
     return app

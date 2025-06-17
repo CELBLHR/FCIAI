@@ -5,6 +5,7 @@ import logging
 import os
 from datetime import datetime, timedelta
 from flask import current_app
+from pytz import timezone
 
 logger = logging.getLogger(__name__)
 
@@ -94,13 +95,53 @@ def schedule_cleanup_task():
     try:
         from apscheduler.schedulers.background import BackgroundScheduler
         from apscheduler.triggers.cron import CronTrigger
+        from app.utils.thread_pool_executor import thread_pool
+        import time
 
+        # 确保线程池已初始化
+        if not thread_pool.initialized:
+            logger.info("线程池未初始化，正在初始化...")
+            thread_pool.configure()
+            # 等待线程池初始化完成
+            time.sleep(1)
+            
+        # 检查线程池健康状态
+        health_status = thread_pool.get_health_status()
+        if not health_status.get('healthy', False):
+            logger.warning(f"线程池健康状态异常: {health_status}")
+            # 尝试重新初始化线程池
+            thread_pool.configure()
+            time.sleep(1)
+            # 再次检查健康状态
+            health_status = thread_pool.get_health_status()
+            if not health_status.get('healthy', False):
+                logger.error("线程池健康状态仍然异常，清理任务可能无法正常执行")
+            else:
+                logger.info("线程池已重新初始化，健康状态正常")
+
+        # 创建调度器
         scheduler = BackgroundScheduler()
 
         # 每天凌晨3点执行清理
-        trigger = CronTrigger(hour=3)
+        beijing = timezone('Asia/Shanghai')
+        trigger = CronTrigger(hour=3, timezone=beijing)
+        
+        # 定义安全的清理任务包装函数
+        def safe_cleanup_job():
+            try:
+                # 再次检查线程池健康状态
+                if thread_pool.initialized and thread_pool.get_health_status().get('healthy', False):
+                    logger.info("开始执行定时清理任务")
+                    cleanup_expired_files()
+                    logger.info("定时清理任务完成")
+                else:
+                    logger.error("线程池状态异常，跳过定时清理任务")
+            except Exception as e:
+                logger.error(f"执行定时清理任务失败: {str(e)}")
+
+        # 添加任务
         scheduler.add_job(
-            cleanup_expired_files,
+            safe_cleanup_job,
             trigger=trigger,
             id='cleanup_expired_files',
             name='清理过期文件',
@@ -108,6 +149,7 @@ def schedule_cleanup_task():
             max_instances=1  # 确保同时只有一个实例运行
         )
 
+        # 启动调度器
         scheduler.start()
         logger.info("文件清理任务已调度，每天凌晨3点执行")
 
@@ -115,7 +157,8 @@ def schedule_cleanup_task():
 
     except Exception as e:
         logger.error(f"调度清理任务失败: {str(e)}")
-        raise
+        # 不抛出异常，避免影响应用启动
+        return None
 
 def manual_cleanup():
     """手动执行清理任务（用于测试）"""

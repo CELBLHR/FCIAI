@@ -30,6 +30,7 @@ from ..utils.thread_pool_executor import thread_pool, TaskType
 import logging
 import threading
 from datetime import datetime
+from app.utils.timezone_helper import format_datetime, datetime_to_isoformat
 
 # from ..utils.Tokenization import Tokenizer
 # from ...train import train_model
@@ -328,19 +329,16 @@ def get_task_status():
             formatted_logs = []
             for log in status['recent_logs']:
                 formatted_logs.append({
-                    'timestamp': log['timestamp'].strftime('%H:%M:%S') if isinstance(log['timestamp'], datetime) else str(log['timestamp']),
+                    'timestamp': datetime_to_isoformat(log['timestamp']) if log['timestamp'] else '',
                     'message': log['message'],
                     'level': log['level']
                 })
             status['recent_logs'] = formatted_logs
 
-        # 格式化时间戳
+        # 使用ISO格式化时间戳
         for key in ['created_at', 'started_at', 'completed_at']:
             if key in status and status[key]:
-                if isinstance(status[key], datetime):
-                    status[key] = status[key].strftime('%Y-%m-%d %H:%M:%S')
-                else:
-                    status[key] = str(status[key])
+                status[key] = datetime_to_isoformat(status[key])
 
         return jsonify(status)
     return jsonify({'status': 'no_task'})
@@ -403,21 +401,18 @@ def get_history():
         records = UploadRecord.query.filter_by(user_id=current_user.id) \
             .order_by(UploadRecord.upload_time.desc()).all()
 
-        beijing_tz = pytz.timezone('Asia/Shanghai')
-
         history_records = []
         for record in records:
             # 检查文件是否仍然存在
             file_exists = os.path.exists(os.path.join(record.file_path, record.stored_filename))
 
-            # 转换时间为北京时间
-            local_time = record.upload_time.astimezone(beijing_tz)
-
+            # 使用ISO格式返回时间，让前端正确处理时区
+            upload_time = datetime_to_isoformat(record.upload_time)
             history_records.append({
                 'id': record.id,
                 'filename': record.filename,
                 'file_size': record.file_size,
-                'upload_time': local_time.strftime('%Y-%m-%d %H:%M:%S'),
+                'upload_time': upload_time,
                 'status': record.status,
                 'file_exists': file_exists
             })
@@ -569,9 +564,9 @@ def get_registrations():
             'id': user.id,
             'username': user.username,
             'status': user.status,
-            'register_time': user.register_time.astimezone(pytz.timezone('Asia/Shanghai')).strftime('%Y-%m-%d %H:%M:%S') if user.register_time else None,
+            'register_time': datetime_to_isoformat(user.register_time) if user.register_time else None,
             'approve_user': user.approve_user.username if user.approve_user else None,
-            'approve_time': user.approve_time.astimezone(pytz.timezone('Asia/Shanghai')).strftime('%Y-%m-%d %H:%M:%S') if user.approve_time else None
+            'approve_time': datetime_to_isoformat(user.approve_time) if user.approve_time else None
         } for user in pagination.items],
         'total_pages': pagination.pages,
         'current_page': page,
@@ -649,7 +644,7 @@ def get_translations():
             'id': item.id,
             'english': item.english,
             'chinese': item.chinese,
-            'created_at': item.created_at.strftime('%Y-%m-%d %H:%M:%S')
+            'created_at': datetime_to_isoformat(item.created_at)
         } for item in pagination.items],
         'total_pages': pagination.pages,
         'current_page': page,
@@ -691,7 +686,7 @@ def add_translation():
                 'id': translation.id,
                 'english': translation.english,
                 'chinese': translation.chinese,
-                'created_at': translation.created_at.strftime('%Y-%m-%d %H:%M:%S')
+                'created_at': datetime_to_isoformat(translation.created_at)
             }
         })
     except Exception as e:
@@ -736,7 +731,7 @@ def update_translation(id):
                 'id': translation.id,
                 'english': translation.english,
                 'chinese': translation.chinese,
-                'created_at': translation.created_at.strftime('%Y-%m-%d %H:%M:%S')
+                'created_at': datetime_to_isoformat(translation.created_at)
             }
         })
     except Exception as e:
@@ -1125,18 +1120,11 @@ def get_sso_users():
         # 查询所有SSO用户
         sso_users = User.query.filter(User.sso_provider.isnot(None)).all()
 
-        beijing_tz = pytz.timezone('Asia/Shanghai')
-
         users_data = []
         for user in sso_users:
-            # 转换时间为北京时间
-            last_login = None
-            if user.last_login:
-                last_login = user.last_login.astimezone(beijing_tz).strftime('%Y-%m-%d %H:%M:%S')
-
-            register_time = None
-            if user.register_time:
-                register_time = user.register_time.astimezone(beijing_tz).strftime('%Y-%m-%d %H:%M:%S')
+            # 格式化时间
+            last_login = format_datetime(user.last_login)
+            register_time = format_datetime(user.register_time)
 
             users_data.append({
                 'id': user.id,
@@ -1158,9 +1146,6 @@ def get_sso_users():
     except Exception as e:
         logger.error(f"获取SSO用户列表失败: {e}")
         return jsonify({'error': f'获取用户列表失败: {str(e)}'}), 500
-
-
-
 
 
 @main.route('/ocr_status', methods=['GET'])

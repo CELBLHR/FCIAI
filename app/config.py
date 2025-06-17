@@ -20,7 +20,7 @@ class Config:
     
     # 文件存储配置
     UPLOAD_FOLDER = os.environ.get('UPLOAD_FOLDER') or 'uploads'
-    MAX_CONTENT_LENGTH = 100 * 1024 * 1024  # 最大文件大小：50MB
+    MAX_CONTENT_LENGTH = 50 * 1024 * 1024  # 最大文件大小：50MB
     USER_STORAGE_QUOTA = 1024 * 1024 * 1024  # 用户存储配额：1GB
     FILE_CLEANUP_DAYS = 7  # 文件保留天数
     TEMP_FILE_CLEANUP_HOURS = 24  # 临时文件保留小时数
@@ -49,11 +49,11 @@ class Config:
     DB_NAME = os.environ.get('DB_NAME') or 'app'
     
     # 数据库连接池配置
-    DB_POOL_SIZE = int(os.environ.get('DB_POOL_SIZE') or 100)
+    DB_POOL_SIZE = int(os.environ.get('DB_POOL_SIZE') or 10)
     DB_MAX_OVERFLOW = int(os.environ.get('DB_MAX_OVERFLOW') or 20)
     DB_POOL_TIMEOUT = int(os.environ.get('DB_POOL_TIMEOUT') or 10)
     DB_POOL_RECYCLE = int(os.environ.get('DB_POOL_RECYCLE') or 3600)
-    print(DB_POOL_SIZE, DB_MAX_OVERFLOW, DB_POOL_RECYCLE, DB_POOL_TIMEOUT)
+    
     # Redis配置
     REDIS_URL = os.environ.get('REDIS_URL') or 'redis://localhost:6379/0'
     
@@ -110,6 +110,12 @@ class Config:
     
     # 直接设置数据库URI字符串，而不是使用属性
     SQLALCHEMY_DATABASE_URI = f"mysql+pymysql://root:password@localhost:3306/app"
+    
+    # 应用程序名称
+    APP_NAME = os.environ.get('APP_NAME', '翻译系统')
+    
+    # 时区配置
+    TIMEZONE = os.environ.get('TIMEZONE', 'Asia/Shanghai')
     
     @property
     def UPLOAD_PATH(self):
