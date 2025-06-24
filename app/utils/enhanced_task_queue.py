@@ -534,17 +534,23 @@ class EnhancedTranslationQueue:
                         task.completed_at = now_with_timezone()
                         task.event.set()
                         queue_instance.logger.info(f"任务完成: {task.task_id}")
+                        # 更新数据库记录状态
+                        queue_instance._schedule_database_update(task)
                     elif thread_task.status == TaskStatus.FAILED:
                         task.status = "failed"
                         task.error = str(thread_task.error)
                         task.completed_at = now_with_timezone()
                         task.event.set()
                         queue_instance.logger.error(f"任务失败: {task.task_id}, 错误: {task.error}")
+                        # 更新数据库记录状态
+                        queue_instance._schedule_database_update(task)
                     elif thread_task.status == TaskStatus.CANCELED:
                         task.status = "canceled"
                         task.completed_at = now_with_timezone()
                         task.event.set()
                         queue_instance.logger.info(f"任务已取消: {task.task_id}")
+                        # 更新数据库记录状态
+                        queue_instance._schedule_database_update(task)
                     
                     # 确保全局清理线程池存在
                     if not hasattr(queue_instance, 'cleanup_executor') or queue_instance.cleanup_executor is None:
@@ -1049,18 +1055,52 @@ class EnhancedTranslationQueue:
                 return
         
         try:
-            # 这里可以添加数据库更新逻辑
-            # 例如更新UploadRecord状态等
+            # 更新UploadRecord状态
+            from app.models import UploadRecord
+            from app import db
             
-            # 可以在这里添加其他通知机制，比如：
-            # 1. 发送消息到消息队列
-            # 2. 写入文件
-            # 3. 发送HTTP请求到主应用
-            pass
+            # 从文件路径中获取存储的文件名和目录
+            file_path = task.file_path
+            stored_filename = os.path.basename(file_path)
+            file_directory = os.path.dirname(file_path)
+            
+            # 查询对应的记录
+            record = UploadRecord.query.filter_by(
+                user_id=task.user_id,
+                file_path=file_directory,
+                stored_filename=stored_filename
+            ).first()
+            
+            if record:
+                # 根据任务状态更新记录状态
+                if task.status == "completed":
+                    record.status = 'completed'
+                    self.logger.info(f"更新记录状态为completed: {record.id}, 文件: {record.filename}")
+                elif task.status == "failed":
+                    record.status = 'failed'
+                    # 如果有错误信息，也更新到记录中
+                    if task.error:
+                        record.error_message = task.error[:255]  # 限制错误信息长度
+                    self.logger.info(f"更新记录状态为failed: {record.id}, 文件: {record.filename}")
+                
+                # 提交数据库更改
+                db.session.commit()
+                self.logger.info(f"成功更新数据库记录状态: {record.id}")
+            else:
+                self.logger.warning(
+                    f"未找到对应的上传记录 - 用户ID: {task.user_id}, "
+                    f"文件路径: {file_directory}, "
+                    f"存储文件名: {stored_filename}"
+                )
             
         except Exception as e:
-            self.logger.error(f"调度数据库更新任务失败: {str(e)}")
-            # 数据库状态可以通过其他方式同步，比如定期检查任务状态
+            self.logger.error(f"更新数据库记录状态失败: {str(e)}")
+            try:
+                # 尝试回滚事务
+                from app import db
+                db.session.rollback()
+            except Exception as rollback_error:
+                self.logger.error(f"回滚事务失败: {str(rollback_error)}")
         
         finally:
             # 如果我们创建了应用上下文，需要弹出它
@@ -1210,6 +1250,12 @@ class EnhancedTranslationQueue:
         
         # 通知任务队列有新的处理空间
         self.task_available.set()
+        
+        # 尝试更新数据库记录状态
+        try:
+            self._schedule_database_update(task)
+        except Exception as e:
+            self.logger.error(f"无应用上下文时更新数据库记录失败: {str(e)}")
 
     def get_task_status(self, task_id: str) -> Optional[Dict[str, Any]]:
         """
@@ -1743,7 +1789,17 @@ class EnhancedTranslationQueue:
                     # 获取当前正在执行的任务数量
                     active_tasks = 0
                     if hasattr(self.cleanup_executor, '_work_queue'):
-                        active_tasks = len(self.cleanup_executor._threads) - len(self.cleanup_executor._work_queue.unfinished_tasks)
+                        work_queue = self.cleanup_executor._work_queue
+                        if hasattr(work_queue, 'unfinished_tasks'):
+                            # 如果是 Queue.Queue 类型
+                            active_tasks = len(self.cleanup_executor._threads) - work_queue.unfinished_tasks
+                        elif hasattr(work_queue, 'qsize'):
+                            # 如果是 SimpleQueue 类型，使用qsize代替
+                            active_tasks = len(self.cleanup_executor._threads) - work_queue.qsize()
+                        else:
+                            # 保守估计：假设所有线程都在活跃
+                            active_tasks = len(self.cleanup_executor._threads)
+                            self.logger.warning("无法确定清理线程池中的活跃任务数量，假设所有线程都活跃")
                     
                     if active_tasks > 0:
                         self.logger.info(f"等待{active_tasks}个清理任务完成...")

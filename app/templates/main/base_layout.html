@@ -46,15 +46,21 @@
                             注册审批
                         </a>
 
+                        <!-- 文件管理页面 -->
+                        <a href="{{ url_for('main.file_management') }}" class="nav-link {% if request.endpoint == 'main.file_management' %}active{% endif %}">
+                            <i class="bi bi-file-earmark-ppt"></i>
+                            文件管理
+                        </a>
+
                         <!-- 系统监控页面 -->
-                        <a href="{{ url_for('main.system_monitoring') }}" class="nav-link {% if request.endpoint == 'main.system_monitoring' %}active{% endif %}">
-                            <i class="bi bi-speedometer2"></i>
-                            系统监控
-                        </a>
-                        <a href="{{ url_for('db_management.db_stats_page') }}" class="nav-link {% if request.endpoint == 'db_management.db_stats_page' %}active{% endif %}">
-                            <i class="bi bi-database"></i>
-                            数据库连接池
-                        </a>
+{#                        <a href="{{ url_for('main.system_monitoring') }}" class="nav-link {% if request.endpoint == 'main.system_monitoring' %}active{% endif %}">#}
+{#                            <i class="bi bi-speedometer2"></i>#}
+{#                            系统监控#}
+{#                        </a>#}
+{#                        <a href="{{ url_for('db_management.db_stats_page') }}" class="nav-link {% if request.endpoint == 'db_management.db_stats_page' %}active{% endif %}">#}
+{#                            <i class="bi bi-database"></i>#}
+{#                            数据库连接池#}
+{#                        </a>#}
                         <a href="{{ url_for('main.logs') }}" class="nav-link {% if request.endpoint == 'main.logs' %}active{% endif %}">
                             <i class="bi bi-journal-text"></i>
                             日志管理

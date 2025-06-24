@@ -1734,7 +1734,7 @@ def reset_task_queue():
 def system_monitoring():
     """系统监控页面 - 显示线程池、任务队列和数据库连接状态"""
     # 验证用户是否有管理员权限
-    if not current_user.is_admin:
+    if not current_user.is_administrator:
         flash('您没有访问此页面的权限。', 'danger')
         return redirect(url_for('main.index'))
     
@@ -1845,3 +1845,101 @@ def upload_pdf():
             except Exception as cleanup_error:
                 logger.error(f"无法清理文件: {cleanup_error}")
         return jsonify({'error': f'上传失败: {str(e)}'}), 500
+
+
+@main.route('/file_management')
+@login_required
+def file_management():
+    """文件管理页面 - 管理员可查看所有用户上传的文件"""
+    if not current_user.is_administrator():
+        flash('没有权限访问此页面')
+        return redirect(url_for('main.index'))
+        
+    return render_template('main/file_management.html', user=current_user)
+
+
+@main.route('/api/admin/files')
+@login_required
+def get_admin_files():
+    """获取所有用户上传的文件 (仅管理员)"""
+    if not current_user.is_administrator():
+        return jsonify({'error': '没有权限访问此API'}), 403
+        
+    try:
+        # 查询所有文件记录
+        records = UploadRecord.query.order_by(UploadRecord.upload_time.desc()).all()
+        
+        # 构建文件列表，包含用户信息
+        files = []
+        for record in records:
+            # 查询用户信息
+            user = User.query.get(record.user_id)
+            username = user.username if user else "未知用户"
+            
+            # 检查文件是否存在
+            file_exists = os.path.exists(os.path.join(record.file_path, record.stored_filename))
+            
+            # 使用ISO格式返回时间，让前端正确处理时区
+            upload_time = datetime_to_isoformat(record.upload_time)
+            
+            files.append({
+                'id': record.id,
+                'filename': record.filename,
+                'stored_filename': record.stored_filename,
+                'file_path': record.file_path,
+                'file_size': record.file_size,
+                'upload_time': upload_time,
+                'status': record.status,
+                'error_message': record.error_message,
+                'user_id': record.user_id,
+                'username': username,
+                'file_exists': file_exists
+            })
+            
+        return jsonify({
+            'files': files,
+            'total': len(files)
+        })
+        
+    except Exception as e:
+        logger.error(f"获取管理员文件列表失败: {str(e)}")
+        return jsonify({
+            'error': f'获取文件列表失败: {str(e)}',
+            'files': [],
+            'total': 0
+        }), 500
+
+
+@main.route('/api/admin/files/<int:record_id>', methods=['DELETE'])
+@login_required
+def admin_delete_file(record_id):
+    """管理员删除文件"""
+    if not current_user.is_administrator():
+        return jsonify({'error': '没有权限执行此操作'}), 403
+        
+    try:
+        # 获取上传记录
+        record = UploadRecord.query.get_or_404(record_id)
+        
+        # 删除物理文件
+        file_path = os.path.join(record.file_path, record.stored_filename)
+        if os.path.exists(file_path):
+            os.remove(file_path)
+            logger.info(f"管理员删除文件: {file_path}")
+        
+        # 删除数据库记录
+        db.session.delete(record)
+        db.session.commit()
+        
+        return jsonify({
+            'success': True,
+            'message': '文件删除成功'
+        })
+        
+    except Exception as e:
+        db.session.rollback()
+        logger.error(f"管理员删除文件失败: {str(e)}")
+        return jsonify({
+            'success': False,
+            'error': f'删除文件失败: {str(e)}'
+        }), 500
