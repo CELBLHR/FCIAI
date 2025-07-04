@@ -119,6 +119,7 @@ def logout():
         return redirect(url_for('sso.sso_logout'))
 
     logout_user()
+    session.clear() # Clear all session data
     flash('已退出登录')
     return redirect(url_for('auth.login'))
 

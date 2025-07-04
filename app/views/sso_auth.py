@@ -251,17 +251,20 @@ def sso_logout():
         
         # 普通登出
         logout_user()
+        session.clear() # Clear all session data
         flash('已退出登录', 'info')
         return redirect(url_for('auth.login'))
         
     except Exception as e:
         logger.error(f"SSO登出异常: {e}")
         logout_user()
+        session.clear() # Clear all session data
         flash('登出时出现异常，但已成功退出', 'warning')
         return redirect(url_for('auth.login'))
     finally:
         # 无论SSO提供者是否重定向，都确保最终重定向到本地登录页
         logout_user()
+        session.clear() # Clear all session data
         flash('您已成功登出。', 'info')
         return redirect(url_for('auth.login'))
 
