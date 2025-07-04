@@ -74,6 +74,9 @@ def login():
             elif user.status == 'rejected':
                 flash('您的注册申请已被拒绝')
                 return redirect(url_for('auth.login'))
+            elif user.status == 'disabled':
+                flash('您的账号已被禁用，请联系管理员')
+                return redirect(url_for('auth.login'))
             
             login_user(user)
             # 设置 session

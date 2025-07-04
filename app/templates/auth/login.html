@@ -6,6 +6,7 @@
 <div class="auth-container">
     <div class="login-box">
         <h1>登录</h1>
+        {#
         <form method="POST">
             <div class="form-group">
                 <label for="username">用户名</label>
@@ -24,6 +25,7 @@
                 </button>
             </div>
         </form>
+#}
 
         <!-- SSO登录选项 -->
         {% if sso_enabled %}
@@ -251,6 +253,7 @@
 </style>
 
 <script>
+{#
 document.querySelector('form').addEventListener('submit', function(e) {
     e.preventDefault();
     
@@ -286,5 +289,6 @@ loginBtn.addEventListener('click', function(e) {
         ripple.remove();
     }, 1000);
 });
+#}
 </script>
 {% endblock %} 

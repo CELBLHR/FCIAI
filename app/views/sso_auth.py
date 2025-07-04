@@ -259,6 +259,11 @@ def sso_logout():
         logout_user()
         flash('登出时出现异常，但已成功退出', 'warning')
         return redirect(url_for('auth.login'))
+    finally:
+        # 无论SSO提供者是否重定向，都确保最终重定向到本地登录页
+        logout_user()
+        flash('您已成功登出。', 'info')
+        return redirect(url_for('auth.login'))
 
 
 @sso_bp.route('/status')

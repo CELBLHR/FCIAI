@@ -1,0 +1,302 @@
+{% extends "main/base_layout.html" %}
+
+{% block title %}用户管理{% endblock %}
+
+{% block styles %}
+<style>
+.user-management-container {
+    max-width: 1000px;
+    margin: 0 auto;
+}
+
+.user-management-header {
+    margin-bottom: 2rem;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.status-filter {
+    display: flex;
+    gap: 1rem;
+}
+
+.status-btn {
+    padding: 0.5rem 1rem;
+    border: none;
+    border-radius: 5px;
+    cursor: pointer;
+    background: rgba(0, 0, 0, 0.2);
+    color: var(--text-color);
+    transition: all 0.3s;
+}
+
+.status-btn.active {
+    background: var(--primary-color);
+    color: white;
+}
+
+.user-management-table {
+    width: 100%;
+    border-collapse: collapse;
+    background: rgba(0, 0, 0, 0.2);
+    border-radius: 10px;
+    overflow: hidden;
+}
+
+.user-management-table th,
+.user-management-table td {
+    padding: 1rem;
+    text-align: left;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.user-management-table th {
+    background: rgba(0, 0, 0, 0.3);
+    font-weight: bold;
+    color: var(--primary-color);
+}
+
+.user-management-table tr:hover {
+    background: rgba(0, 168, 255, 0.1);
+}
+
+.status-badge {
+    padding: 0.3rem 0.8rem;
+    border-radius: 20px;
+    font-size: 0.9rem;
+}
+
+.status-approved {
+    background: rgba(40, 167, 69, 0.2);
+    color: #28a745;
+}
+
+.status-disabled {
+    background: rgba(108, 117, 125, 0.2);
+    color: #6c757d;
+}
+
+.action-btns {
+    display: flex;
+    gap: 0.5rem;
+}
+
+.action-btn {
+    padding: 0.5rem 1rem;
+    border: none;
+    border-radius: 5px;
+    cursor: pointer;
+    transition: all 0.3s;
+    display: flex;
+    align-items: center;
+    gap: 0.3rem;
+}
+
+.disable-btn {
+    background: rgba(255, 193, 7, 0.2);
+    color: #ffc107;
+}
+
+.disable-btn:hover {
+    background: rgba(255, 193, 7, 0.3);
+}
+
+.enable-btn {
+    background: rgba(23, 162, 184, 0.2);
+    color: #17a2b8;
+}
+
+.enable-btn:hover {
+    background: rgba(23, 162, 184, 0.3);
+}
+
+.pagination {
+    margin-top: 2rem;
+    display: flex;
+    justify-content: center;
+    gap: 0.5rem;
+}
+
+.pagination button {
+    padding: 0.5rem 1rem;
+    border: none;
+    border-radius: 5px;
+    background: rgba(0, 0, 0, 0.2);
+    color: var(--text-color);
+    cursor: pointer;
+    transition: all 0.3s;
+}
+
+.pagination button:hover {
+    background: rgba(0, 168, 255, 0.1);
+}
+
+.pagination button.active {
+    background: var(--primary-color);
+    color: white;
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="user-management-container">
+    <div class="user-management-header">
+        <h1><i class="bi bi-people"></i> 用户管理</h1>
+        <div class="status-filter">
+            <button class="status-btn active" data-status="all">全部</button>
+            <button class="status-btn" data-status="approved">已启用</button>
+            <button class="status-btn" data-status="disabled">已禁用</button>
+        </div>
+    </div>
+
+    <table class="user-management-table">
+        <thead>
+            <tr>
+                <th>用户名</th>
+                <th>注册时间</th>
+                <th>状态</th>
+                <th>操作</th>
+            </tr>
+        </thead>
+        <tbody id="userList">
+            <!-- 数据将通过JavaScript动态添加 -->
+        </tbody>
+    </table>
+
+    <div id="pagination" class="pagination">
+        <!-- 分页将通过JavaScript动态添加 -->
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let currentStatus = 'all';
+let currentPage = 1;
+
+async function loadUsers(status = 'all', page = 1) {
+    try {
+        const response = await fetch(`/api/users?status=${status}&page=${page}`);
+        const data = await response.json();
+        
+        if (response.ok) {
+            const tbody = document.getElementById('userList');
+            tbody.innerHTML = data.users.map(user => `
+                <tr>
+                    <td>${user.username}</td>
+                    <td>${user.register_time}</td>
+                    <td>
+                        <span class="status-badge status-${user.status}">
+                            ${getStatusText(user.status)}
+                        </span>
+                    </td>
+                    <td>
+                        <div class="action-btns">
+                            ${user.status === 'approved' ? `
+                                <button class="action-btn disable-btn" onclick="disableUser(${user.id})">
+                                    <i class="bi bi-slash-circle"></i>
+                                    禁用
+                                </button>
+                            ` : ''}
+                            ${user.status === 'disabled' ? `
+                                <button class="action-btn enable-btn" onclick="enableUser(${user.id})">
+                                    <i class="bi bi-check-circle"></i>
+                                    启用
+                                </button>
+                            ` : ''}
+                        </div>
+                    </td>
+                </tr>
+            `).join('');
+
+            updatePagination(data.total_pages, page);
+        } else {
+            throw new Error(data.error || '加载失败');
+        }
+    } catch (error) {
+        showToast(error.message, 'error');
+    }
+}
+
+function updatePagination(totalPages, currentPage) {
+    const pagination = document.getElementById('pagination');
+    pagination.innerHTML = '';
+    
+    if (totalPages <= 1) return;
+    
+    for (let i = 1; i <= totalPages; i++) {
+        const button = document.createElement('button');
+        button.textContent = i;
+        button.className = i === currentPage ? 'active' : '';
+        button.onclick = () => {
+            currentPage = i;
+            loadUsers(currentStatus, i);
+        };
+        pagination.appendChild(button);
+    }
+}
+
+function getStatusText(status) {
+    const statusMap = {
+        'approved': '已启用',
+        'disabled': '已禁用'
+    };
+    return statusMap[status] || status;
+}
+
+async function disableUser(id) {
+    if (!confirm('确定要禁用该用户吗？')) return;
+    
+    try {
+        const response = await fetch(`/api/users/${id}/disable`, {
+            method: 'POST'
+        });
+        
+        const data = await response.json();
+        
+        if (response.ok) {
+            showToast('用户已禁用', 'success');
+            loadUsers(currentStatus, currentPage);
+        } else {
+            throw new Error(data.error || '操作失败');
+        }
+    } catch (error) {
+        showToast(error.message, 'error');
+    }
+}
+
+async function enableUser(id) {
+    if (!confirm('确定要启用该用户吗？')) return;
+    
+    try {
+        const response = await fetch(`/api/users/${id}/enable`, {
+            method: 'POST'
+        });
+        
+        const data = await response.json();
+        
+        if (response.ok) {
+            showToast('用户已启用', 'success');
+            loadUsers(currentStatus, currentPage);
+        } else {
+            throw new Error(data.error || '操作失败');
+        }
+    } catch (error) {
+        showToast(error.message, 'error');
+    }
+}
+
+document.querySelectorAll('.status-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+        document.querySelectorAll('.status-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        currentStatus = btn.dataset.status;
+        currentPage = 1;
+        loadUsers(currentStatus, currentPage);
+    });
+});
+
+loadUsers();
+</script>
+{% endblock %}

@@ -41,10 +41,8 @@
                 </a>
                 {% if current_user.is_authenticated %}
                     {% if current_user.is_administrator() %}
-                        <a href="{{ url_for('main.registration_approval') }}" class="nav-link {% if request.endpoint == 'main.registration_approval' %}active{% endif %}">
-                            <i class="bi bi-person-check"></i>
-                            注册审批
-                        </a>
+                        <a href="{{ url_for('main.registration_approval') }}" class="nav-link"><i class="bi bi-person-check"></i> 注册审批</a>
+                    <a href="{{ url_for('main.user_management') }}" class="nav-link"><i class="bi bi-people"></i> 用户管理</a>
 
                         <!-- 文件管理页面 -->
                         <a href="{{ url_for('main.file_management') }}" class="nav-link {% if request.endpoint == 'main.file_management' %}active{% endif %}">

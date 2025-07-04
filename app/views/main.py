@@ -560,13 +560,44 @@ def get_registrations():
     )
 
     return jsonify({
-        'registrations': [{
+        'registrations': [{ 
             'id': user.id,
             'username': user.username,
             'status': user.status,
             'register_time': datetime_to_isoformat(user.register_time) if user.register_time else None,
             'approve_user': user.approve_user.username if user.approve_user else None,
             'approve_time': datetime_to_isoformat(user.approve_time) if user.approve_time else None
+        } for user in pagination.items],
+        'total_pages': pagination.pages,
+        'current_page': page,
+        'total': pagination.total
+    })
+
+
+@main.route('/api/users')
+@login_required
+def get_users():
+    if not current_user.is_administrator():
+        return jsonify({'error': '没有权限访问'}), 403
+
+    page = request.args.get('page', 1, type=int)
+    status = request.args.get('status', 'all')
+    per_page = 10
+
+    query = User.query.filter(User.status.in_(['approved', 'disabled']))
+    if status != 'all':
+        query = query.filter_by(status=status)
+
+    pagination = query.order_by(User.register_time.desc()).paginate(
+        page=page, per_page=per_page, error_out=False
+    )
+
+    return jsonify({
+        'users': [{ 
+            'id': user.id,
+            'username': user.username,
+            'status': user.status,
+            'register_time': datetime_to_isoformat(user.register_time) if user.register_time else None,
         } for user in pagination.items],
         'total_pages': pagination.pages,
         'current_page': page,
@@ -611,6 +642,44 @@ def reject_registration(id):
         user.approve_user_id = current_user.id
         db.session.commit()
         return jsonify({'message': '已拒绝申请'})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': str(e)}), 500
+
+
+@main.route('/api/users/<int:id>/disable', methods=['POST'])
+@login_required
+def disable_user(id):
+    if not current_user.is_administrator():
+        return jsonify({'error': '没有权限进行此操作'}), 403
+
+    user = User.query.get_or_404(id)
+    if user.status != 'approved':
+        return jsonify({'error': '该用户无法被禁用'}), 400
+
+    try:
+        user.status = 'disabled'
+        db.session.commit()
+        return jsonify({'message': '用户已禁用'})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': str(e)}), 500
+
+
+@main.route('/api/users/<int:id>/enable', methods=['POST'])
+@login_required
+def enable_user(id):
+    if not current_user.is_administrator():
+        return jsonify({'error': '没有权限进行此操作'}), 403
+
+    user = User.query.get_or_404(id)
+    if user.status != 'disabled':
+        return jsonify({'error': '该用户无法被启用'}), 400
+
+    try:
+        user.status = 'approved'
+        db.session.commit()
+        return jsonify({'message': '用户已启用'})
     except Exception as e:
         db.session.rollback()
         return jsonify({'error': str(e)}), 500
@@ -1856,6 +1925,16 @@ def file_management():
         return redirect(url_for('main.index'))
         
     return render_template('main/file_management.html', user=current_user)
+
+
+@main.route('/user_management')
+@login_required
+def user_management():
+    """用户管理页面 - 仅管理员可见"""
+    if not current_user.is_administrator():
+        flash('没有权限访问此页面')
+        return redirect(url_for('main.index'))
+    return render_template('main/user_management.html', user=current_user)
 
 
 @main.route('/api/admin/files')
