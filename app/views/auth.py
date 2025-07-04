@@ -63,10 +63,15 @@ def register():
 @bp.route('/login', methods=['GET', 'POST'])
 def login():
     if request.method == 'POST':
-        username = request.form['username']
+        username = request.form.get('username')
+        email = request.form.get('email') # Assuming frontend provides an 'email' field
         password = request.form['password']
+
+        if not username or not email:
+            flash('请输入用户名和邮箱')
+            return redirect(url_for('auth.login'))
         
-        user = User.query.filter_by(username=username).first()
+        user = User.query.filter_by(username=username, email=email).first()
         if user and user.check_password(password):
             if user.status == 'pending':
                 flash('您的账号正在等待管理员审批')

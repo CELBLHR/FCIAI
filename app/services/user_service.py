@@ -36,16 +36,8 @@ class UserService:
         if not username:
             raise ValueError("用户名不能为空")
         
-        # 首先尝试通过用户名查找
-        user = User.query.filter_by(username=username).first()
-        
-        # 如果没找到且有邮箱，尝试通过邮箱查找
-        if not user and email:
-            user = User.query.filter_by(email=email).first()
-            if user:
-                # 更新用户名以匹配SSO
-                user.username = username
-                logger.info(f"通过邮箱找到用户，更新用户名: {email} -> {username}")
+        # 尝试通过用户名和邮箱同时查找
+        user = User.query.filter_by(username=username, email=email).first()
         
         if user:
             # 更新现有用户信息
