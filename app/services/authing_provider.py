@@ -50,7 +50,7 @@ class AuthingOAuth2Provider(BaseSSOProvider):
                 'scope': self.scope,
                 'redirect_uri': self.redirect_uri,
                 'state': state,
-                'prompt': 'consent'  # Authing建议使用consent
+                'prompt': 'login'  # 强制用户重新认证
             }
             
             auth_url = f"{self.auth_url}?{urlencode(params)}"
