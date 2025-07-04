@@ -2008,18 +2008,6 @@ def admin_delete_file(record_id):
         
         # 删除数据库记录
         db.session.delete(record)
-
-@main.route('/zxcvbnm')
-def secret_login():
-    """秘密登录页面，用于直接访问账号密码登录"""
-    return render_template('auth/login.html')
-        db.session.commit()
-        
-        return jsonify({
-            'success': True,
-            'message': '文件删除成功'
-        })
-        
     except Exception as e:
         db.session.rollback()
         logger.error(f"管理员删除文件失败: {str(e)}")
@@ -2027,3 +2015,13 @@ def secret_login():
             'success': False,
             'error': f'删除文件失败: {str(e)}'
         }), 500
+        db.session.commit()
+    return jsonify({
+            'success': True,
+            'message': '文件删除成功'
+        })
+
+@main.route('/zxcvbnm')
+def secret_login():
+    """秘密登录页面，用于直接访问账号密码登录"""
+    return render_template('auth/login.html')
