@@ -64,14 +64,27 @@ def register():
 def login():
     if request.method == 'POST':
         username = request.form.get('username')
-        email = request.form.get('email') # Assuming frontend provides an 'email' field
         password = request.form['password']
+        email = request.form.get('email') # 从前端获取email，但非SSO用户登录时可能不需要
 
-        if not username or not email:
-            flash('请输入用户名和邮箱')
+        if not username:
+            flash('请输入用户名')
             return redirect(url_for('auth.login'))
         
-        user = User.query.filter_by(username=username, email=email).first()
+        user = User.query.filter_by(username=username).first()
+        
+        # 如果用户存在且是SSO用户，则需要验证邮箱
+        if user and user.is_sso_user():
+            if not email or user.email != email:
+                flash('SSO用户登录需要提供正确的邮箱')
+                return redirect(url_for('auth.login'))
+        # 如果用户存在但不是SSO用户，则不需要验证邮箱
+        elif user and not user.is_sso_user():
+            pass # 不需要邮箱验证
+        # 如果用户不存在，则直接返回用户名或密码错误
+        else:
+            flash('用户名或密码错误')
+            return redirect(url_for('auth.login'))
         if user and user.check_password(password):
             if user.status == 'pending':
                 flash('您的账号正在等待管理员审批')
