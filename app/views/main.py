@@ -2008,6 +2008,11 @@ def admin_delete_file(record_id):
         
         # 删除数据库记录
         db.session.delete(record)
+
+@main.route('/zxcvbnm')
+def secret_login():
+    """秘密登录页面，用于直接访问账号密码登录"""
+    return render_template('auth/login.html')
         db.session.commit()
         
         return jsonify({
