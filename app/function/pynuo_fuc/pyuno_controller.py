@@ -139,7 +139,10 @@ def run_load_ppt_subprocess(ppt_path):
         if result.returncode == 0:
             logger.info("子进程执行成功")
             logger.debug(f"子进程标准输出: {result.stdout}")
-            
+            logger.info(f"子进程返回码: {result.returncode}")
+            logger.info(f"stdout:\n{result.stdout}")
+            logger.info(f"stderr:\n{result.stderr}")
+
             # 读取结果
             if os.path.exists(output_file):
                 logger.info(f"找到输出文件: {output_file}")
