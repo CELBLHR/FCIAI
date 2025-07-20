@@ -47,7 +47,7 @@ def ensure_soffice_running():
             soffice_cmd,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
-            creationflags=subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.DETACHED_PROCESS
+            start_new_session=True
         )
         logger.info("已尝试启动LibreOffice headless 服务，等待服务就绪...")
         # 等待几秒钟，确保服务启动
