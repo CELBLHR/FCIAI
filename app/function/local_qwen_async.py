@@ -42,7 +42,7 @@ logger = logging.getLogger(__name__)
 # 模型配置
 MODEL_NAME = "qwen2.5-72b-instruct"
 API_BASE_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1"
-API_KEY = os.environ.get("DASHSCOPE_API_KEY")
+API_KEY = os.environ.get("QWEN_API_KEY")
 
 # 备用API配置
 BACKUP_API_URLS = [
@@ -319,8 +319,9 @@ async def translate_by_fields_async(field: str, text: str, stop_words: List[str]
     """},
                     {"role": "user", "content": text}
                 ],
-                temperature=0.3,
-                max_tokens=8000
+                temperature=0.7,
+                max_tokens=8000,
+                timeout=600
             )
             result = response.choices[0].message.content
             logger.info(f"翻译成功，返回结果长度: {len(result)}")
@@ -354,11 +355,11 @@ async def parse_formatted_text_async(text: str):
         解析结果
     """
     try:
-        return json.loads(text)
+        return json.loads(text, strict = False)
     except json.JSONDecodeError as e:
         logger.warning(f"初次解析 JSON 失败，尝试修复格式: {e}")
         fixed_text = await re_parse_formatted_text_async(text)
-        return json.loads(fixed_text)
+        return json.loads(fixed_text, strict = False)
 
 async def re_parse_formatted_text_async(text: str):
     """

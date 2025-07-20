@@ -28,7 +28,7 @@ class TranslationTask:
                 source_language: str = 'en', target_language: str = 'zh-cn',
                 priority: int = 0, annotation_filename: str = None,
                 annotation_json: Dict = None, select_page: List[int] = None,
-                bilingual_translation: bool = False, **kwargs):
+                bilingual_translation: bool = False, model:str='qwen', **kwargs):
         """
         初始化翻译任务
 
@@ -59,6 +59,7 @@ class TranslationTask:
         self.annotation_json = annotation_json  # 添加注释数据字段
         self.select_page = select_page or []
         self.bilingual_translation = bilingual_translation
+        self.model = model
 
         # PDF注释相关参数
         self.annotations = kwargs.get('annotations', [])
@@ -165,7 +166,7 @@ class EnhancedTranslationQueue:
                 task_type: str = 'ppt_translate', source_language: str = 'en',
                 target_language: str = 'zh-cn', priority: int = 0,
                 annotation_filename: str = None, annotation_json: Dict = None,
-                select_page: List[int] = None, bilingual_translation: bool = False, **kwargs) -> int:
+                select_page: List[int] = None, bilingual_translation: bool = False,model:str='qwen', **kwargs) -> int:
         """
         添加任务到队列
 
@@ -181,6 +182,7 @@ class EnhancedTranslationQueue:
             annotation_json: 注释数据（直接传递）
             select_page: 选择的页面列表
             bilingual_translation: 是否双语翻译
+            model: 模型类型
             **kwargs: 其他参数
 
         Returns:
@@ -219,6 +221,7 @@ class EnhancedTranslationQueue:
                 annotation_json=annotation_json,  # 添加注释数据
                 select_page=select_page,
                 bilingual_translation=bilingual_translation,
+                model=model,
                 **kwargs
             )
 
@@ -534,23 +537,17 @@ class EnhancedTranslationQueue:
                         task.completed_at = now_with_timezone()
                         task.event.set()
                         queue_instance.logger.info(f"任务完成: {task.task_id}")
-                        # 更新数据库记录状态
-                        queue_instance._schedule_database_update(task)
                     elif thread_task.status == TaskStatus.FAILED:
                         task.status = "failed"
                         task.error = str(thread_task.error)
                         task.completed_at = now_with_timezone()
                         task.event.set()
                         queue_instance.logger.error(f"任务失败: {task.task_id}, 错误: {task.error}")
-                        # 更新数据库记录状态
-                        queue_instance._schedule_database_update(task)
                     elif thread_task.status == TaskStatus.CANCELED:
                         task.status = "canceled"
                         task.completed_at = now_with_timezone()
                         task.event.set()
                         queue_instance.logger.info(f"任务已取消: {task.task_id}")
-                        # 更新数据库记录状态
-                        queue_instance._schedule_database_update(task)
                     
                     # 确保全局清理线程池存在
                     if not hasattr(queue_instance, 'cleanup_executor') or queue_instance.cleanup_executor is None:
@@ -892,7 +889,7 @@ class EnhancedTranslationQueue:
         """获取数据库连接信息"""
         try:
             from flask import current_app
-            engine = current_app.extensions['sqlalchemy'].db.engine
+            engine = current_app.extensions['sqlalchemy'].engine
             return {
                 'checkedin': engine.pool.checkedin(),
                 'checkedout': engine.pool.checkedout(),
@@ -907,7 +904,7 @@ class EnhancedTranslationQueue:
         try:
             from flask import current_app
             from sqlalchemy import text
-            engine = current_app.extensions['sqlalchemy'].db.engine
+            engine = current_app.extensions['sqlalchemy'].engine
             
             # 尝试执行一个简单查询来回收连接
             with engine.connect() as conn:
@@ -961,7 +958,8 @@ class EnhancedTranslationQueue:
                     source_language=task.source_language,
                     target_language=task.target_language,
                     bilingual_translation=str(int(task.bilingual_translation)),
-                    progress_callback=progress_callback
+                    progress_callback=progress_callback,
+                    model=task.model
                 )
             else:
                 # 使用普通处理函数
@@ -973,7 +971,8 @@ class EnhancedTranslationQueue:
                     source_language=task.source_language,
                     target_language=task.target_language,
                     bilingual_translation=str(int(task.bilingual_translation)),
-                    progress_callback=progress_callback
+                    progress_callback=progress_callback,
+                    model=task.model
                 )
 
             return result
@@ -1036,81 +1035,32 @@ class EnhancedTranslationQueue:
         self.logger.info(f"任务完成 - ID: {task.task_id}, 用户: {task.user_name}, 文件: {os.path.basename(task.file_path)}")
         
         # 检查是否已经在应用上下文中
-        app_context_created = False
         try:
             from flask import current_app
             # 尝试直接访问current_app，如果已在应用上下文中则不需要创建新的上下文
             _ = current_app.name
             self.logger.info(f"数据库更新 {task.task_id} 已在应用上下文中")
+            # 这里可以添加数据库更新逻辑
+            # 例如更新UploadRecord状态等
+            
+            # 可以在这里添加其他通知机制，比如：
+            # 1. 发送消息到消息队列
+            # 2. 写入文件
+            # 3. 发送HTTP请求到主应用
+            pass
         except RuntimeError:
             # 如果不在应用上下文中，创建一个新的
             try:
                 from app import create_app
                 app = create_app()
-                app.app_context().push()  # 使用push而不是with语句，避免线程问题
-                app_context_created = True
-                self.logger.info(f"数据库更新 {task.task_id} 创建了新的应用上下文")
+                with app.app_context():
+                    self.logger.info(f"数据库更新 {task.task_id} 创建了新的应用上下文")
+                    # 这里可以添加数据库更新逻辑
+                    # 例如更新UploadRecord状态等
+                    pass
             except Exception as e:
                 self.logger.error(f"创建应用上下文失败: {str(e)}")
                 return
-        
-        try:
-            # 更新UploadRecord状态
-            from app.models import UploadRecord
-            from app import db
-            
-            # 从文件路径中获取存储的文件名和目录
-            file_path = task.file_path
-            stored_filename = os.path.basename(file_path)
-            file_directory = os.path.dirname(file_path)
-            
-            # 查询对应的记录
-            record = UploadRecord.query.filter_by(
-                user_id=task.user_id,
-                file_path=file_directory,
-                stored_filename=stored_filename
-            ).first()
-            
-            if record:
-                # 根据任务状态更新记录状态
-                if task.status == "completed":
-                    record.status = 'completed'
-                    self.logger.info(f"更新记录状态为completed: {record.id}, 文件: {record.filename}")
-                elif task.status == "failed":
-                    record.status = 'failed'
-                    # 如果有错误信息，也更新到记录中
-                    if task.error:
-                        record.error_message = task.error[:255]  # 限制错误信息长度
-                    self.logger.info(f"更新记录状态为failed: {record.id}, 文件: {record.filename}")
-                
-                # 提交数据库更改
-                db.session.commit()
-                self.logger.info(f"成功更新数据库记录状态: {record.id}")
-            else:
-                self.logger.warning(
-                    f"未找到对应的上传记录 - 用户ID: {task.user_id}, "
-                    f"文件路径: {file_directory}, "
-                    f"存储文件名: {stored_filename}"
-                )
-            
-        except Exception as e:
-            self.logger.error(f"更新数据库记录状态失败: {str(e)}")
-            try:
-                # 尝试回滚事务
-                from app import db
-                db.session.rollback()
-            except Exception as rollback_error:
-                self.logger.error(f"回滚事务失败: {str(rollback_error)}")
-        
-        finally:
-            # 如果我们创建了应用上下文，需要弹出它
-            if app_context_created:
-                try:
-                    from flask import _app_ctx_stack
-                    _app_ctx_stack.pop()
-                    self.logger.info(f"数据库更新 {task.task_id} 弹出了应用上下文")
-                except Exception as e:
-                    self.logger.error(f"弹出应用上下文失败: {str(e)}")
 
     def _handle_task_error(self, task: TranslationTask, error: str) -> None:
         """
@@ -1127,26 +1077,63 @@ class EnhancedTranslationQueue:
         task.error = error
         
         # 检查是否已经在应用上下文中
-        app_context_created = False
         try:
             from flask import current_app
             # 尝试直接访问current_app，如果已在应用上下文中则不需要创建新的上下文
             _ = current_app.name
             self.logger.info(f"任务错误处理 {task.task_id} 已在应用上下文中")
+            self._handle_task_error_with_context(task, error)
         except RuntimeError:
             # 如果不在应用上下文中，创建一个新的
             try:
                 from app import create_app
                 app = create_app()
-                app.app_context().push()  # 使用push而不是with语句，避免线程问题
-                app_context_created = True
-                self.logger.info(f"任务错误处理 {task.task_id} 创建了新的应用上下文")
+                with app.app_context():
+                    self.logger.info(f"任务错误处理 {task.task_id} 创建了新的应用上下文")
+                    self._handle_task_error_with_context(task, error)
             except Exception as e:
                 self.logger.error(f"创建应用上下文失败: {str(e)}")
                 # 如果创建应用上下文失败，执行基本操作并返回
                 self._handle_task_error_without_context(task, error)
                 return
+    
+    def _handle_task_error_without_context(self, task: TranslationTask, error: str) -> None:
+        """
+        在没有应用上下文的情况下处理任务错误的基本操作
         
+        Args:
+            task: 出错的任务
+            error: 错误信息
+        """
+        # 更新任务状态
+        task.status = "failed"
+        task.completed_at = now_with_timezone()
+        task.event.set()  # 设置事件，通知等待的线程
+        
+        # 更新当前操作信息
+        current_time = now_with_timezone()
+        task.logs.append({
+            'timestamp': current_time,
+            'message': f"任务最终失败 (无应用上下文): {error}",
+            'level': 'error'
+        })
+        
+        # 从活跃任务列表中移除
+        with self.lock:
+            if task.task_id in self.active_tasks:
+                del self.active_tasks[task.task_id]
+        
+        # 通知任务队列有新的处理空间
+        self.task_available.set()
+
+    def _handle_task_error_with_context(self, task: TranslationTask, error: str) -> None:
+        """
+        在应用上下文中处理任务错误
+        
+        Args:
+            task: 出错的任务
+            error: 错误信息
+        """
         try:
             # 检查是否可以重试
             if task.retry_count < self.retry_times:
@@ -1211,51 +1198,88 @@ class EnhancedTranslationQueue:
             self.logger.error(f"处理任务错误时出现异常: {str(e)}")
             # 如果处理过程中出现异常，执行基本操作
             self._handle_task_error_without_context(task, error)
-        
-        finally:
-            # 如果我们创建了应用上下文，需要弹出它
-            if app_context_created:
-                try:
-                    from flask import _app_ctx_stack
-                    _app_ctx_stack.pop()
-                    self.logger.info(f"任务错误处理 {task.task_id} 弹出了应用上下文")
-                except Exception as e:
-                    self.logger.error(f"弹出应用上下文失败: {str(e)}")
-    
-    def _handle_task_error_without_context(self, task: TranslationTask, error: str) -> None:
+
+    def _recycle_idle_connections_with_context(self) -> Dict[str, Any]:
         """
-        在没有应用上下文的情况下处理任务错误的基本操作
+        在应用上下文中回收闲置的数据库连接
+        
+        Returns:
+            回收结果的状态信息
+        """
+        try:
+            from flask import current_app
+            from sqlalchemy import create_engine, text
+            import time
+            
+            # 获取当前数据库引擎
+            engine = current_app.extensions['sqlalchemy'].engine
+            
+            # 记录回收前的连接池状态
+            before_status = {
+                'pool_size': engine.pool.size(),
+                'checkedin': engine.pool.checkedin(),
+                'checkedout': engine.pool.checkedout(),
+                'overflow': engine.pool.overflow()
+            }
+            
+            # 创建一个临时连接执行回收命令
+            start_time = time.time()
+            with engine.connect() as conn:
+                # 执行连接池回收
+                conn.execute(text("/* 回收空闲连接 */ SELECT 1"))
+                
+            # 强制回收所有空闲连接
+            engine.dispose()
+            
+            # 记录回收后的连接池状态
+            after_status = {
+                'pool_size': engine.pool.size(),
+                'checkedin': engine.pool.checkedin(),
+                'checkedout': engine.pool.checkedout(),
+                'overflow': engine.pool.overflow()
+            }
+            
+            execution_time = time.time() - start_time
+            
+            result = {
+                'success': True,
+                'message': '成功回收空闲连接',
+                'before': before_status,
+                'after': after_status,
+                'execution_time': execution_time
+            }
+            
+            return result
+        
+        except Exception as e:
+            self.logger.error(f"回收连接失败: {str(e)}")
+            return {
+                'success': False,
+                'message': f'回收连接失败: {str(e)}',
+                'error': str(e)
+            }
+
+    def _cleanup_task_resources_with_context(self, task: TranslationTask) -> None:
+        """
+        在应用上下文中清理任务资源
         
         Args:
-            task: 出错的任务
-            error: 错误信息
+            task: 要清理资源的任务
         """
-        # 更新任务状态
-        task.status = "failed"
-        task.completed_at = now_with_timezone()
-        task.event.set()  # 设置事件，通知等待的线程
-        
-        # 更新当前操作信息
-        current_time = now_with_timezone()
-        task.logs.append({
-            'timestamp': current_time,
-            'message': f"任务最终失败 (无应用上下文): {error}",
-            'level': 'error'
-        })
-        
-        # 从活跃任务列表中移除
-        with self.lock:
-            if task.task_id in self.active_tasks:
-                del self.active_tasks[task.task_id]
-        
-        # 通知任务队列有新的处理空间
-        self.task_available.set()
-        
-        # 尝试更新数据库记录状态
         try:
-            self._schedule_database_update(task)
+            # 在应用上下文中执行数据库相关操作
+            from flask import current_app
+            db = current_app.extensions['sqlalchemy']
+            
+            # 如果任务有自己的会话，关闭它
+            if hasattr(task, 'db_session') and task.db_session:
+                try:
+                    task.db_session.close()
+                    self.logger.info(f"已关闭任务专用数据库会话: {task.task_id}")
+                except Exception as e:
+                    self.logger.warning(f"关闭任务数据库会话失败: {str(e)}")
         except Exception as e:
-            self.logger.error(f"无应用上下文时更新数据库记录失败: {str(e)}")
+            self.logger.error(f"在上下文中清理任务资源时出错: {str(e)}")
 
     def get_task_status(self, task_id: str) -> Optional[Dict[str, Any]]:
         """
@@ -1418,20 +1442,20 @@ class EnhancedTranslationQueue:
             回收结果的状态信息
         """
         # 检查是否已经在应用上下文中
-        app_context_created = False
         try:
             from flask import current_app
             # 尝试直接访问current_app，如果已在应用上下文中则不需要创建新的上下文
             _ = current_app.name
             self.logger.info("回收连接已在应用上下文中")
+            return self._recycle_idle_connections_with_context()
         except RuntimeError:
             # 如果不在应用上下文中，创建一个新的
             try:
                 from app import create_app
                 app = create_app()
-                app.app_context().push()  # 使用push而不是with语句，避免线程问题
-                app_context_created = True
-                self.logger.info("回收连接创建了新的应用上下文")
+                with app.app_context():
+                    self.logger.info("回收连接创建了新的应用上下文")
+                    return self._recycle_idle_connections_with_context()
             except Exception as e:
                 self.logger.error(f"创建应用上下文失败: {str(e)}")
                 return {
@@ -1439,69 +1463,6 @@ class EnhancedTranslationQueue:
                     'message': f'创建应用上下文失败: {str(e)}',
                     'error': str(e)
                 }
-        
-        try:
-            from flask import current_app
-            from sqlalchemy import create_engine, text
-            import time
-            
-            # 获取当前数据库引擎
-            engine = current_app.extensions['sqlalchemy'].db.engine
-            
-            # 记录回收前的连接池状态
-            before_status = {
-                'pool_size': engine.pool.size(),
-                'checkedin': engine.pool.checkedin(),
-                'checkedout': engine.pool.checkedout(),
-                'overflow': engine.pool.overflow()
-            }
-            
-            # 创建一个临时连接执行回收命令
-            start_time = time.time()
-            with engine.connect() as conn:
-                # 执行连接池回收
-                conn.execute(text("/* 回收空闲连接 */ SELECT 1"))
-                
-            # 强制回收所有空闲连接
-            engine.dispose()
-            
-            # 记录回收后的连接池状态
-            after_status = {
-                'pool_size': engine.pool.size(),
-                'checkedin': engine.pool.checkedin(),
-                'checkedout': engine.pool.checkedout(),
-                'overflow': engine.pool.overflow()
-            }
-            
-            execution_time = time.time() - start_time
-            
-            result = {
-                'success': True,
-                'message': '成功回收空闲连接',
-                'before': before_status,
-                'after': after_status,
-                'execution_time': execution_time
-            }
-            
-            return result
-        
-        except Exception as e:
-            self.logger.error(f"回收连接失败: {str(e)}")
-            return {
-                'success': False,
-                'message': f'回收连接失败: {str(e)}',
-                'error': str(e)
-            }
-        
-        finally:
-            # 如果我们创建了应用上下文，需要弹出它
-            if app_context_created:
-                try:
-                    from flask import _app_ctx_stack
-                    _app_ctx_stack.pop()
-                    self.logger.info("回收连接弹出了应用上下文")
-                except Exception as e:
-                    self.logger.error(f"弹出应用上下文失败: {str(e)}")
 
     def _cleanup_task_resources(self, task: TranslationTask) -> None:
         """
@@ -1517,45 +1478,20 @@ class EnhancedTranslationQueue:
             self.logger.info(f"清理任务资源: {task.task_id}, 用户: {task.user_id}")
             
             # 检查是否已经在应用上下文中
-            app_context_created = False
             try:
                 from flask import current_app
                 # 尝试直接访问current_app，如果已在应用上下文中则不需要创建新的上下文
                 _ = current_app.name
                 self.logger.info(f"资源清理 {task.task_id} 已在应用上下文中")
-                
-                # 在应用上下文中执行数据库相关操作
-                db = current_app.extensions['sqlalchemy'].db
-                
-                # 如果任务有自己的会话，关闭它
-                if hasattr(task, 'db_session') and task.db_session:
-                    try:
-                        task.db_session.close()
-                        self.logger.info(f"已关闭任务专用数据库会话: {task.task_id}")
-                    except Exception as e:
-                        self.logger.warning(f"关闭任务数据库会话失败: {str(e)}")
-                
+                self._cleanup_task_resources_with_context(task)
             except RuntimeError:
                 # 如果不在应用上下文中，创建一个新的
                 try:
                     from app import create_app
                     app = create_app()
-                    app.app_context().push()  # 使用push而不是with语句，避免线程问题
-                    app_context_created = True
-                    self.logger.info(f"资源清理 {task.task_id} 创建了新的应用上下文")
-                    
-                    # 在应用上下文中执行数据库相关操作
-                    from flask import current_app
-                    db = current_app.extensions['sqlalchemy'].db
-                    
-                    # 如果任务有自己的会话，关闭它
-                    if hasattr(task, 'db_session') and task.db_session:
-                        try:
-                            task.db_session.close()
-                            self.logger.info(f"已关闭任务专用数据库会话: {task.task_id}")
-                        except Exception as e:
-                            self.logger.warning(f"关闭任务数据库会话失败: {str(e)}")
-                
+                    with app.app_context():
+                        self.logger.info(f"资源清理 {task.task_id} 创建了新的应用上下文")
+                        self._cleanup_task_resources_with_context(task)
                 except Exception as e:
                     self.logger.warning(f"创建应用上下文失败，跳过数据库清理: {str(e)}")
             
@@ -1576,15 +1512,6 @@ class EnhancedTranslationQueue:
                     self.logger.info(f"长时间运行任务({duration:.1f}秒)完成，建议回收连接池")
                     
             self.logger.info(f"任务资源清理完成: {task.task_id}")
-            
-            # 如果我们创建了应用上下文，需要弹出它
-            if app_context_created:
-                try:
-                    from flask import _app_ctx_stack
-                    _app_ctx_stack.pop()
-                    self.logger.info(f"资源清理 {task.task_id} 弹出了应用上下文")
-                except Exception as e:
-                    self.logger.error(f"弹出应用上下文失败: {str(e)}")
             
         except Exception as e:
             self.logger.error(f"清理任务资源时出错: {str(e)}")
@@ -1788,18 +1715,8 @@ class EnhancedTranslationQueue:
                     
                     # 获取当前正在执行的任务数量
                     active_tasks = 0
-                    if hasattr(self.cleanup_executor, '_work_queue'):
-                        work_queue = self.cleanup_executor._work_queue
-                        if hasattr(work_queue, 'unfinished_tasks'):
-                            # 如果是 Queue.Queue 类型
-                            active_tasks = len(self.cleanup_executor._threads) - work_queue.unfinished_tasks
-                        elif hasattr(work_queue, 'qsize'):
-                            # 如果是 SimpleQueue 类型，使用qsize代替
-                            active_tasks = len(self.cleanup_executor._threads) - work_queue.qsize()
-                        else:
-                            # 保守估计：假设所有线程都在活跃
-                            active_tasks = len(self.cleanup_executor._threads)
-                            self.logger.warning("无法确定清理线程池中的活跃任务数量，假设所有线程都活跃")
+                    if hasattr(self.cleanup_executor, '_work_queue') and hasattr(self.cleanup_executor._work_queue, 'qsize'):
+                        active_tasks = self.cleanup_executor._work_queue.qsize()
                     
                     if active_tasks > 0:
                         self.logger.info(f"等待{active_tasks}个清理任务完成...")

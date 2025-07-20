@@ -705,6 +705,13 @@
             <option value="0">不保留源语言</option>
         </select>
     </div>
+    <div>
+        <label for="model">翻译模型</label>
+        <select id="model">
+            <option value="qwen">Qwen2.5</option>
+            <option value="deepseek">DeepSeek-Chat</option>
+        </select>
+    </div>
 </div>
 
 <div id="queue-status" class="alert alert-info" style="display: none;">
@@ -827,6 +834,7 @@ let totalPageCount = 0;
 let sourceLanguage = 'en';
 let targetLanguage = 'zh';
 let bilingual_translation=1
+let model = 'qwen';
 // 监听语言选择变化
 document.getElementById('source-language').addEventListener('change', function(e) {
     sourceLanguage = e.target.value;
@@ -837,6 +845,9 @@ document.getElementById('target-language').addEventListener('change', function(e
 });
 document.getElementById('bilingual_translation').addEventListener('change', function(e) {
     bilingual_translation = e.target.value;
+});
+document.getElementById('model').addEventListener('change', function(e) {
+    model = e.target.value;
 });
 // 加载用户的注释文件列表
 async function loadAnnotationFiles() {
@@ -1004,6 +1015,7 @@ async function startTranslation() {
         formData.append('source_language', sourceLanguage);
         formData.append('target_language', targetLanguage);
         formData.append('bilingual_translation',bilingual_translation)
+        formData.append('model',model)
         if (selectedAnnotationFile) {
             formData.append('annotation_filename', selectedAnnotationFile);
         }
@@ -1018,22 +1030,20 @@ async function startTranslation() {
             throw new Error(data.error || '上传失败');
         }
 
-        {#const uploadData = await uploadResponse.json();#}
-
+        // const uploadData = await uploadResponse.json();
         // 开始翻译任务
-        {#const response = await fetch('/start_translation', {#}
-        {#    method: 'POST',#}
-        {#    headers: {#}
-        {#        'Content-Type': 'application/json'#}
-        {#    },#}
-        {#    body: JSON.stringify({#}
-        {#        file_path: uploadData.file_path,#}
-        {#        pages: Array.from(selectedPages),#}
-        {#        annotation_filename: selectedAnnotationFile#}
-        {#    })#}
-{#        });#}
-        {##}
-        {#const result = await response.json();#}
+        // const response = await fetch('/start_translation', {
+        //     method: 'POST',
+        //     headers: {
+        //         'Content-Type': 'application/json'
+        //     },
+        //     body: JSON.stringify({
+        //         file_path: uploadData.file_path,
+        //         pages: Array.from(selectedPages),
+        //         annotation_filename: selectedAnnotationFile
+        //     })
+        // });
+        // const result = await response.json();
 
         if (uploadResponse.ok) {
             // 隐藏页面选择器

@@ -41,7 +41,7 @@ from .ppt_translate import (
 )
 
 # 配置日志记录器
-logger = logging.getLogger(__name__)
+logger = logging.getLogger(__name__) 
 
 # 优化: 分块大小，用于批量处理
 BATCH_SIZE = 20  # 每批处理的文本数量
@@ -456,13 +456,6 @@ async def _preserve_textbox_size_with_autofit_async(presentation_path: str) -> b
 
 
 
-
-
-
-
-
-
-
 async def _unified_shape_processing_async(presentation_path: str) -> bool:
     """
     统一的形状处理函数（避免多重处理冲突）
@@ -566,7 +559,8 @@ async def process_presentation_async(presentation_path: str,
                                    source_language: str,
                                    target_language: str,
                                    bilingual_translation: str,
-                                   progress_callback=None) -> bool:
+                                   progress_callback=None,
+                                   model:str='qwen') -> bool:
     """
     异步处理演示文稿（基于页面的翻译机制）
     每页调用一次API，按段落匹配翻译结果
@@ -584,10 +578,38 @@ async def process_presentation_async(presentation_path: str,
     Returns:
         处理是否成功
     """
+
     start_time = time.time()
     logger.info(f"开始异步处理演示文稿: {os.path.basename(presentation_path)}")
     logger.info(f"源语言: {source_language}, 目标语言: {target_language}, 双语翻译: {bilingual_translation}")
     logger.info(f"选中页面: {select_page}")
+
+    '''
+    添加使用pyuno接口的功能，用libreoffice渲染ppt，实现翻译转化。
+    顺序如下：
+    1. 打开ppt，读取文本
+    2. 翻译
+    3. 再打开ppt，并渲染
+    '''
+    try:
+        from .pynuo_fuc.pyuno_controller import pyuno_controller
+        uno_pptx_path= pyuno_controller(presentation_path, 
+                        stop_words_list, 
+                        custom_translations, 
+                        select_page, 
+                        source_language, 
+                        target_language, 
+                        bilingual_translation, 
+                        progress_callback,
+                        model
+                        )
+        logger.info(f"调用UNO接口翻译PPT文本框成功，翻译后的PPT文件地址: {uno_pptx_path}")
+    except Exception as e:
+        logger.error(f"使用pyuno接口功能时出错: {str(e)}")
+    
+    if uno_pptx_path is None:
+        logger.error("使用pyuno接口功能时出错: 转换失败")
+
 
     try:
         # 加载演示文稿
@@ -595,7 +617,7 @@ async def process_presentation_async(presentation_path: str,
         loop = asyncio.get_event_loop()
 
         def _read_presentation():
-            return Presentation(presentation_path)
+            return Presentation(uno_pptx_path)
 
         prs = await loop.run_in_executor(None, _read_presentation)
         total_slides = len(prs.slides)
@@ -660,15 +682,15 @@ async def process_presentation_async(presentation_path: str,
 
         def _save_presentation():
             # 创建临时文件以避免内存泄漏
-            temp_path = f"{presentation_path}.temp"
+            temp_path = f"{uno_pptx_path}.temp"
             # 使用已经修改过的演示文稿对象进行保存
             prs.save(temp_path)
 
-            # 如果保存成功，替换原文件
+            # 如果保存成功，替换翻译后文件
             if os.path.exists(temp_path):
-                if os.path.exists(presentation_path):
-                    os.remove(presentation_path)
-                os.rename(temp_path, presentation_path)
+                if os.path.exists(uno_pptx_path):
+                    os.remove(uno_pptx_path)
+                os.rename(temp_path, uno_pptx_path)
                 return True
             return False
 
@@ -679,11 +701,22 @@ async def process_presentation_async(presentation_path: str,
             logger.info("正在进行布局调整...")
 
             # 使用COM操作进行最终的文本框调整
-            layout_result = await _adjust_ppt_layout_async(presentation_path)
+            layout_result = await _adjust_ppt_layout_async(uno_pptx_path)
             if layout_result:
                 logger.info("布局调整完成")
             else:
                 logger.warning("布局调整失败，但翻译已完成")
+
+            # === 新增：将翻译后PPT重命名为原始PPT名，覆盖原文件 ===
+            try:
+                original_ppt_path = presentation_path
+                if os.path.exists(original_ppt_path):
+                    os.remove(original_ppt_path)
+                os.rename(uno_pptx_path, original_ppt_path)
+                logger.info(f"翻译后PPT已重命名为原始文件名，覆盖原文件: {original_ppt_path}")
+            except Exception as e:
+                logger.error(f"重命名翻译后PPT时出错: {e}")
+                return False
 
         elapsed = time.time() - start_time
         logger.info(f"演示文稿处理完成:")
@@ -709,14 +742,15 @@ async def process_presentation_async(presentation_path: str,
 
         return False
 
-async def process_presentation_add_annotations_async(presentation_path: str,
+async def  process_presentation_add_annotations_async(presentation_path: str,
                                                  annotations: Dict,
                                                  stop_words: List[str],
                                                  custom_translations: Dict[str, str],
                                                  source_language: str,
                                                  target_language: str,
                                                  bilingual_translation: str,
-                                                 progress_callback=None) -> bool:
+                                                 progress_callback=None,
+                                                 model:str='qwen') -> bool:
     """
     异步处理带注释的演示文稿
 
@@ -960,6 +994,7 @@ def process_presentation(presentation_path: str,
                        progress_callback=None,
                        # 兼容性参数
                        stop_words: List[str] = None,
+                       model:str='qwen',
                        **kwargs) -> bool:
     """
     处理PPT翻译（同步包装函数）
@@ -974,6 +1009,7 @@ def process_presentation(presentation_path: str,
         target_language: 目标语言代码
         bilingual_translation: 是否双语翻译（"0"或"1"）
         progress_callback: 进度回调函数，接收两个参数(current_slide, total_slides)
+        model: 模型类型
         stop_words: 停止词列表（兼容性参数）
 
     Returns:
@@ -1005,7 +1041,8 @@ def process_presentation(presentation_path: str,
             source_language,
             target_language,
             bilingual_translation,
-            progress_callback
+            progress_callback,
+            model
         )
 
         logger.info(f"演示文稿处理完成: {os.path.basename(presentation_path)}")
@@ -1023,7 +1060,8 @@ def process_presentation_add_annotations(presentation_path: str,
                                        source_language: str,
                                        target_language: str,
                                        bilingual_translation: str,
-                                       progress_callback=None) -> bool:
+                                       progress_callback=None,
+                                       model:str='qwen') -> bool:
     """
     处理带注释的PPT翻译（同步包装函数）
 
@@ -1056,7 +1094,8 @@ def process_presentation_add_annotations(presentation_path: str,
             source_language,
             target_language,
             is_bilingual,
-            progress_callback
+            progress_callback,
+            model
         )
         logger.info(f"带注释的演示文稿处理完成: {presentation_path}")
         return result
