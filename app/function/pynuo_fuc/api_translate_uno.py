@@ -328,7 +328,7 @@ def translate_pages_by_page(text_boxes_data, progress_callback,source_language='
     for page_index in sorted(page_indices):
         logger.info(f"正在处理第 {page_index + 1} 页...")
         if progress_callback:
-            progress_callback(page_index + 1, len(page_indices))
+            progress_callback(page_index , len(page_indices))
         # 生成该页的格式化文本
         page_content = format_page_text_for_translation(text_boxes_data, page_index)
         
