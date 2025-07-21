@@ -33,7 +33,7 @@ def create_app(config_name='development'):
     """
     # 创建应用实例
     app = Flask(__name__)
-    libreoffice_guard.start_guard_daemon()
+    # libreoffice_guard.start_guard_daemon()
     # 加载配置
     app.config.from_object(config[config_name])
     config[config_name].init_app(app)
