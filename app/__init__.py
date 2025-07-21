@@ -14,7 +14,7 @@ from .utils.thread_pool_executor import thread_pool
 from .utils.enhanced_task_queue import translation_queue
 from .utils.lazy_http_client import http_client
 from .utils.db_session_manager import setup_db_monitoring
-
+from .libreoffice_guard import start_guard_daemon
 # 创建扩展实例
 db = SQLAlchemy()
 login_manager = LoginManager()
@@ -33,7 +33,7 @@ def create_app(config_name='development'):
     """
     # 创建应用实例
     app = Flask(__name__)
-
+    libreoffice_guard.start_guard_daemon()
     # 加载配置
     app.config.from_object(config[config_name])
     config[config_name].init_app(app)
