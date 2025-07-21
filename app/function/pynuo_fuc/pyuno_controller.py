@@ -55,7 +55,7 @@ def ensure_soffice_running():
             if check_soffice_alive():
                 logger.info("LibreOffice headless 服务启动成功！")
                 return
-            time.sleep(1)
+            time.sleep(5)
         logger.error("自动启动LibreOffice headless 服务失败，请手动检查！")
     except Exception as e:
         logger.error(f"启动soffice服务时出错: {e}", exc_info=True)
