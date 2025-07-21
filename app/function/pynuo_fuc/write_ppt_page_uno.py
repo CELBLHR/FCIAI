@@ -35,7 +35,7 @@ def insert_soft_line_break(text, cursor, logger=None):
         try:
             import uno #type: ignore
             from com.sun.star.text.ControlCharacter import LINE_BREAK #type: ignore
-            text.insertControlCharacter(cursor, LINE_BREAK, False)
+            text.insertControlCharacter(cursor, "\n", False)
             logger.debug("成功插入软回车（ControlCharacter.LINE_BREAK）")
             return True
         except Exception as e:
@@ -44,7 +44,7 @@ def insert_soft_line_break(text, cursor, logger=None):
         # 方法2: 尝试使用Unicode软换行符
         try:
             # Unicode Line Separator (U+2028)
-            text.insertString(cursor, "\u2028", False)
+            text.insertString(cursor, "\n", False)
             logger.debug("成功插入软回车（Unicode Line Separator）")
             return True
         except Exception as e:
