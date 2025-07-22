@@ -591,24 +591,24 @@ async def process_presentation_async(presentation_path: str,
     2. 翻译
     3. 再打开ppt，并渲染
     '''
-    # try:
-    #     from .pynuo_fuc.pyuno_controller import pyuno_controller
-    #     uno_pptx_path= pyuno_controller(presentation_path,
-    #                     stop_words_list,
-    #                     custom_translations,
-    #                     select_page,
-    #                     source_language,
-    #                     target_language,
-    #                     bilingual_translation,
-    #                     progress_callback,
-    #                     model
-    #                     )
-    #     logger.info(f"调用UNO接口翻译PPT文本框成功，翻译后的PPT文件地址: {uno_pptx_path}")
-    # except Exception as e:
-    #     logger.error(f"使用pyuno接口功能时出错: {str(e)}")
-    #
-    # if uno_pptx_path is None:
-    #     logger.error("使用pyuno接口功能时出错: 转换失败")
+    try:
+        from .pynuo_fuc.pyuno_controller import pyuno_controller
+        uno_pptx_path= pyuno_controller(presentation_path, 
+                        stop_words_list, 
+                        custom_translations, 
+                        select_page, 
+                        source_language, 
+                        target_language, 
+                        bilingual_translation, 
+                        progress_callback,
+                        model
+                        )
+        logger.info(f"调用UNO接口翻译PPT文本框成功，翻译后的PPT文件地址: {uno_pptx_path}")
+    except Exception as e:
+        logger.error(f"使用pyuno接口功能时出错: {str(e)}")
+    
+    if uno_pptx_path is None:
+        logger.error("使用pyuno接口功能时出错: 转换失败")
 
 
     try:
@@ -617,7 +617,7 @@ async def process_presentation_async(presentation_path: str,
         loop = asyncio.get_event_loop()
 
         def _read_presentation():
-            return Presentation(presentation_path)
+            return Presentation(uno_pptx_path)
 
         prs = await loop.run_in_executor(None, _read_presentation)
         total_slides = len(prs.slides)

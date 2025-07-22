@@ -47,7 +47,7 @@ def extract_text_and_attrs(shape):
     buffer = ''        # 当前片段内容缓冲
     current_fragment_index = 0  # 当前片段索引
     
-    # 遍历每一个字符
+    # 遍历每一个字
     for idx, char in enumerate(text_str):
         cursor.gotoStart(False)  # 游标回到开头
         cursor.goRight(idx, False)  # 向右移动到第idx个字符

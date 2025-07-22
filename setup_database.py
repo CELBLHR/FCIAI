@@ -460,6 +460,7 @@ def main():
     print(f"  主机: {DB_CONFIG['host']}:{DB_CONFIG['port']}")
     print(f"  用户: {DB_CONFIG['user']}")
     print(f"  数据库: {DB_CONFIG['database']}")
+    print(f"  密码: {DB_CONFIG['password']}")
 
     # 确认执行
     confirm = input(f"\n确认使用以上配置创建数据库? (y/N): ").strip().lower()

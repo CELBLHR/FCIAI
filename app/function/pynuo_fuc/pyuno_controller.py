@@ -26,42 +26,167 @@ def check_soffice_alive():
             return True
     return False
 
-def ensure_soffice_running():
+import psutil
+import time
+import socket
+
+def check_port_listening(host='localhost', port=2002, timeout=1):
     """
-    检查soffice服务是否存活，如未运行则自动启动。
+    检查指定端口是否正在监听
+    """
+    try:
+        with socket.create_connection((host, port), timeout=timeout):
+            return True
+    except (socket.error, ConnectionRefusedError, OSError):
+        return False
+
+def kill_all_soffice_processes():
+    """
+    强制关闭所有 soffice 进程
     """
     logger = get_logger("pyuno.main")
-    if check_soffice_alive():
-        logger.info("检测到LibreOffice headless 服务已在运行，无需重启。")
-        return
-    logger.warning("未检测到LibreOffice headless 服务，尝试自动启动...")
-    soffice_path = SOFFICE_PATH or "C:/Program Files/LibreOffice/program/soffice.exe"
+    killed_count = 0
+    
+    for proc in psutil.process_iter(['pid', 'name', 'cmdline']):
+        try:
+            name = proc.info['name']
+            if name and 'soffice' in name.lower():
+                logger.info(f"发现soffice进程 PID {proc.info['pid']}: {name}")
+                proc.kill()
+                proc.wait(timeout=3)  # 等待进程结束
+                killed_count += 1
+                logger.info(f"已强制关闭进程 PID {proc.info['pid']}")
+        except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.TimeoutExpired) as e:
+            logger.warning(f"无法关闭进程: {e}")
+    
+    if killed_count > 0:
+        logger.info(f"共关闭了 {killed_count} 个soffice进程")
+        time.sleep(2)  # 等待进程完全关闭
+    
+    return killed_count
+
+def check_soffice_alive():
+    """
+    检查soffice进程是否存活
+    """
+    for proc in psutil.process_iter(['name']):
+        name = proc.info['name']
+        if name and 'soffice' in name.lower():
+            return True
+    return False
+
+def wait_for_service_ready(max_wait_seconds=30, check_interval=0.5):
+    """
+    等待LibreOffice服务就绪（端口监听）
+    """
+    logger = get_logger("pyuno.main")
+    logger.info(f"等待LibreOffice服务端口监听就绪，最多等待 {max_wait_seconds} 秒...")
+    
+    start_time = time.time()
+    while time.time() - start_time < max_wait_seconds:
+        # 检查进程是否存在
+        if not check_soffice_alive():
+            logger.warning("soffice进程不存在，服务可能启动失败")
+            return False
+            
+        # 检查端口是否监听
+        if check_port_listening():
+            elapsed = time.time() - start_time
+            logger.info(f"LibreOffice服务端口监听就绪！耗时 {elapsed:.1f} 秒")
+            return True
+            
+        time.sleep(check_interval)
+    
+    logger.error(f"等待 {max_wait_seconds} 秒后，LibreOffice服务端口仍未就绪")
+    return False
+
+def start_soffice_service():
+    """
+    启动LibreOffice headless服务
+    """
+    logger = get_logger("pyuno.main")
+    
+    # 获取soffice路径
+    soffice_path = SOFFICE_PATH
+    if not soffice_path:
+        # Ubuntu系统的常见路径
+        possible_paths = [
+            "/usr/bin/soffice",
+            "/usr/lib/libreoffice/program/soffice",
+            "/opt/libreoffice/program/soffice",
+            "soffice"  # 系统PATH中
+        ]
+        
+        for path in possible_paths:
+            if os.path.exists(path) or path == "soffice":
+                soffice_path = path
+                logger.info(f"找到soffice路径: {soffice_path}")
+                break
+        
+        if not soffice_path:
+            logger.error("未找到soffice可执行文件，请安装LibreOffice或设置SOFFICE_PATH环境变量")
+            return False
+    
+    # 构建启动命令
     soffice_cmd = [
         soffice_path,
         '--headless',
-        '--accept=socket,host=localhost,port=2002;urp;'
+        '--accept=socket,host=localhost,port=2002;urp;',
+        '--invisible',
+        '--nodefault',
+        '--nolockcheck',
+        '--nologo',
+        '--norestore'
     ]
+    
+    logger.info(f"启动命令: {' '.join(soffice_cmd)}")
+    
     try:
-        # 启动soffice服务，使用DETACHED_PROCESS避免阻塞
-        subprocess.Popen(
+        # 启动服务
+        process = subprocess.Popen(
             soffice_cmd,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
-            # start_new_session=True,
-            # creationflags=subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.DETACHED_PROCESS
-            preexec_fn=os.setsid
+            preexec_fn=os.setsid  # Linux系统使用
         )
-        logger.info("已尝试启动LibreOffice headless 服务，等待服务就绪...")
-        # 等待几秒钟，确保服务启动
-        for i in range(10):
-            if check_soffice_alive():
-                logger.info("LibreOffice headless 服务启动成功！")
-                return
-            time.sleep(5)
-        logger.error("自动启动LibreOffice headless 服务失败，请手动检查！")
+        
+        logger.info(f"已启动LibreOffice服务，进程PID: {process.pid}")
+        
+        # 等待服务就绪
+        if wait_for_service_ready():
+            logger.info("LibreOffice headless服务启动成功！")
+            return True
+        else:
+            logger.error("LibreOffice服务启动失败或端口未就绪")
+            return False
+            
     except Exception as e:
         logger.error(f"启动soffice服务时出错: {e}", exc_info=True)
+        return False
 
+def ensure_soffice_running():
+    """
+    确保LibreOffice headless服务正在运行
+    改进版本：更可靠的服务管理
+    """
+    logger = get_logger("pyuno.main")
+    
+    # 检查端口是否可用
+    if check_port_listening():
+        logger.info("检测到LibreOffice服务端口正在监听，服务正常")
+        return True
+    
+    # 检查是否有soffice进程但端口未监听
+    if check_soffice_alive():
+        logger.warning("检测到soffice进程但端口未监听，可能服务异常，将重启服务")
+        # 强制关闭所有soffice进程
+        kill_all_soffice_processes()
+    else:
+        logger.warning("未检测到LibreOffice headless服务，准备启动")
+    
+    # 启动服务
+    logger.info("正在启动LibreOffice headless服务...")
+    return start_soffice_service()
 # 设置日志记录器
 logger = setup_default_logging()
 

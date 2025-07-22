@@ -33,9 +33,9 @@ def insert_soft_line_break(text, cursor, logger=None):
     try:
         # 方法1: 尝试使用ControlCharacter.LINE_BREAK
         try:
-            import uno #type: ignore
-            from com.sun.star.text.ControlCharacter import LINE_BREAK #type: ignore
-            text.insertControlCharacter(cursor, "\n", False)
+            import uno
+            from com.sun.star.text.ControlCharacter import LINE_BREAK
+            text.insertControlCharacter(cursor, LINE_BREAK, False)
             logger.debug("成功插入软回车（ControlCharacter.LINE_BREAK）")
             return True
         except Exception as e:
@@ -44,7 +44,7 @@ def insert_soft_line_break(text, cursor, logger=None):
         # 方法2: 尝试使用Unicode软换行符
         try:
             # Unicode Line Separator (U+2028)
-            text.insertString(cursor, "\n", False)
+            text.insertString(cursor, "\u2028", False)
             logger.debug("成功插入软回车（Unicode Line Separator）")
             return True
         except Exception as e:
@@ -281,10 +281,13 @@ def write_paragraphs_mode(text, cursor, box, mode, logger):
                     write_paragraph_fragments(text, cursor, paragraph, "text", logger)
                     
                     # 2. 段落内软回车（关键优化点）
-                    logger.debug("插入软回车分隔原文和译文")
-                    soft_break_success = insert_optimized_line_break(text, cursor, "soft", logger)
-                    if not soft_break_success:
-                        logger.warning("软回车插入失败，使用普通换行")
+                    # logger.debug("插入软回车分隔原文和译文")
+                    # soft_break_success = insert_optimized_line_break(text, cursor, "soft", logger)
+                    # if not soft_break_success:
+                    #     logger.warning("软回车插入失败，使用普通换行")
+
+                    # 为保证格式不崩溃，不使用软回车，先使用硬回车
+                    insert_optimized_line_break(text, cursor, "hard", logger)
                     
                     # 3. 写入译文段落
                     write_paragraph_fragments(text, cursor, paragraph, "translated_text", logger)
@@ -668,8 +671,8 @@ def test_line_break_support(text, cursor, logger=None):
     try:
         # 测试ControlCharacter.LINE_BREAK
         try:
-            import uno #type: ignore
-            from com.sun.star.text.ControlCharacter import LINE_BREAK #type: ignore
+            import uno
+            from com.sun.star.text.ControlCharacter import LINE_BREAK
             results["control_character"] = True
             logger.debug("ControlCharacter.LINE_BREAK 支持")
         except Exception as e:
