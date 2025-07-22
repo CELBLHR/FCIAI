@@ -7,6 +7,7 @@ from logger_config import get_logger, log_execution_time
 def extract_texts_for_translation(ppt_data):
     """
     从PPT数据中提取所有需要翻译的文本片段，按文本框和段落分组
+    ✅ 修复版本：正确使用原始页面索引
     Args:
         ppt_data: PPT数据结构（包含段落层级）
     Returns:
@@ -15,7 +16,7 @@ def extract_texts_for_translation(ppt_data):
             - fragment_mapping: 片段ID到索引的映射
     """
     logger = get_logger("pyuno.subprocess")
-    logger.info("开始提取文本片段用于翻译（按文本框和段落分组）...")
+    logger.info("开始提取文本片段用于翻译（按文本框和段落分组，修复页面索引bug）...")
     
     text_boxes_data = []  # 存储每个文本框段落的文本信息
     fragment_mapping = {}  # fragment_id -> (box_index, paragraph_index, fragment_index)
@@ -24,15 +25,23 @@ def extract_texts_for_translation(ppt_data):
         pages = ppt_data.get('pages', [])
         global_box_paragraph_index = 0  # 全局文本框段落计数器
         
-        for page_index, page_data in enumerate(pages):
-            logger.debug(f"处理第 {page_index + 1} 页的文本框")
+        # ✅ 修复：直接遍历页面数据，不使用enumerate
+        for page_data in pages:
+            # ✅ 关键修复：从页面数据中获取真实的页面索引
+            original_page_index = page_data.get('page_index')
+            
+            if original_page_index is None:
+                logger.error(f"页面数据缺少page_index字段: {page_data.keys()}")
+                continue
+                
+            logger.debug(f"处理PPT第 {original_page_index + 1} 页的文本框（原始页面索引：{original_page_index}）")
             text_boxes = page_data.get('text_boxes', [])
             
             for box_index, text_box in enumerate(text_boxes):
                 paragraphs = text_box.get('paragraphs', [])
                 box_id = text_box.get('box_id', f'textbox_{box_index}')
                 
-                logger.debug(f"文本框 {box_id} 包含 {len(paragraphs)} 个段落")
+                logger.debug(f"PPT第{original_page_index + 1}页 文本框 {box_id} 包含 {len(paragraphs)} 个段落")
                 
                 # 处理每个段落
                 for paragraph_index, paragraph in enumerate(paragraphs):
@@ -58,12 +67,12 @@ def extract_texts_for_translation(ppt_data):
                             # 映射：fragment_id -> (global_box_paragraph_index, fragment_index_in_paragraph)
                             fragment_mapping[fragment_id] = (global_box_paragraph_index, len(paragraph_texts) - 1)
                             
-                            logger.debug(f"提取段落 {paragraph_id} 片段 {frag_index}: {fragment_id} -> '{text[:20]}...'")
+                            logger.debug(f"提取PPT第{original_page_index + 1}页段落 {paragraph_id} 片段 {frag_index}: {fragment_id} -> '{text[:20]}...'")
                     
                     # 如果段落有内容，则添加到数据中
                     if paragraph_texts:
                         text_boxes_data.append({
-                            'page_index': page_index,
+                            'page_index': original_page_index,  # ✅ 使用真实的原始页面索引
                             'box_index': box_index,
                             'box_id': box_id,
                             'paragraph_index': paragraph_index,
@@ -79,12 +88,24 @@ def extract_texts_for_translation(ppt_data):
         total_fragments = sum(len(box_para['texts']) for box_para in text_boxes_data)
         logger.info(f"总共提取了 {total_fragments} 个文本片段")
         
+        # ✅ 新增：显示真实的页面索引分布，用于验证修复效果
+        page_distribution = {}
+        for box_para in text_boxes_data:
+            page_idx = box_para['page_index']
+            if page_idx not in page_distribution:
+                page_distribution[page_idx] = 0
+            page_distribution[page_idx] += 1
+        
+        logger.info("=" * 60)
+        logger.info("页面索引验证（应显示用户选择的原始页面）:")
+        for page_idx in sorted(page_distribution.keys()):
+            logger.info(f"  PPT第 {page_idx + 1} 页（原始索引{page_idx}）: {page_distribution[page_idx]} 个文本框段落")
+        logger.info("=" * 60)
+        
         # 显示详细的提取统计
-        logger.info("=" * 50)
         logger.info("提取统计详情:")
         for i, box_para in enumerate(text_boxes_data):
-            logger.info(f"  {i+1}. 页面{box_para['page_index']+1} - {box_para['box_id']} - {box_para['paragraph_id']}: {len(box_para['texts'])} 个片段")
-        logger.info("=" * 50)
+            logger.info(f"  {i+1}. PPT第{box_para['page_index']+1}页 - {box_para['box_id']} - {box_para['paragraph_id']}: {len(box_para['texts'])} 个片段")
         
         return text_boxes_data, fragment_mapping
         

@@ -190,12 +190,23 @@ def ensure_soffice_running():
 # 设置日志记录器
 logger = setup_default_logging()
 
-def run_load_ppt_subprocess(ppt_path):
+def run_load_ppt_subprocess(ppt_path, page_indices=None):
     """
     使用子进程运行load_ppt功能
+    
+    Args:
+        ppt_path (str): PPT文件路径
+        page_indices (List[int], optional): 要处理的页面索引列表（从0开始），None表示处理所有页面
+    
+    Returns:
+        dict: PPT数据结构，失败时返回None
     """
     start_time = datetime.now()
-    log_function_call(logger, "run_load_ppt_subprocess", ppt_path=ppt_path)
+    log_function_call(logger, "run_load_ppt_subprocess", 
+                     ppt_path=ppt_path, page_indices=page_indices)
+    
+    # 参数验证和标准化
+    validated_page_indices = _validate_and_normalize_page_indices(page_indices)
     
     # 创建temp目录
     current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -234,12 +245,19 @@ def run_load_ppt_subprocess(ppt_path):
         logger.error("请设置环境变量 LIBREOFFICE_PYTHON 或确认LibreOffice安装路径")
         return None
     
-    # 构建命令
+    # 构建基础命令
     cmd = [
         libreoffice_python, load_ppt_script,
         "--input", ppt_path,
         "--output", output_file
     ]
+    
+    # 添加页面参数（如果指定了页面）
+    if validated_page_indices is not None:
+        cmd.extend(["--pages"] + [str(idx) for idx in validated_page_indices])
+        logger.info(f"指定处理页面: {validated_page_indices}")
+    else:
+        logger.info("处理所有页面")
     
     logger.info(f"启动子进程命令: {' '.join(cmd)}")
     logger.info(f"工作目录: {current_dir}")
@@ -285,6 +303,11 @@ def run_load_ppt_subprocess(ppt_path):
                 
                 logger.info(f"成功读取PPT内容，共 {total_pages} 页，{total_boxes} 个文本框，{total_paragraphs} 个段落，{total_fragments} 个文本片段")
                 
+                # 记录实际处理的页面信息
+                if validated_page_indices is not None:
+                    actual_processed_pages = len(data.get('pages', []))
+                    logger.info(f"指定页面处理完成: 请求处理 {len(validated_page_indices)} 页，实际处理 {actual_processed_pages} 页")
+                
                 log_execution_time(logger, "run_load_ppt_subprocess", start_time)
                 return data
             else:
@@ -318,6 +341,60 @@ def run_load_ppt_subprocess(ppt_path):
         except Exception as e:
             logger.error(f"删除临时文件失败: {str(e)}")
         pass
+
+
+def _validate_and_normalize_page_indices(page_indices):
+    """
+    验证和标准化页面索引参数
+    ✅ 新增：支持用户友好的页面号输入（1-based转0-based）
+    
+    Args:
+        page_indices: 用户输入的页面号列表（1-based，如[1,2,3]表示第1,2,3页）
+    
+    Returns:
+        List[int] | None: 标准化后的页面索引列表（0-based），如果为空或None则返回None
+    """
+    logger = get_logger("pyuno.main")
+    
+    # 处理None和空列表情况
+    if page_indices is None or len(page_indices) == 0:
+        logger.info("页面索引参数为空，将处理所有页面")
+        return None
+    
+    # 验证和转换页面索引
+    try:
+        # 确保所有元素都是整数
+        validated_indices = []
+        for idx in page_indices:
+            if isinstance(idx, (int, str)):
+                int_idx = int(idx)
+                if int_idx >= 1:  # ✅ 修改：用户输入的页面号从1开始
+                    # ✅ 关键修复：将用户页面号转换为内部索引（1-based转0-based）
+                    internal_index = int_idx - 1
+                    validated_indices.append(internal_index)
+                    logger.info(f"用户页面号 {int_idx} -> 内部索引 {internal_index}")
+                else:
+                    logger.warning(f"忽略无效的页面号（必须>=1）: {int_idx}")
+            else:
+                logger.warning(f"忽略无效的页面号类型: {type(idx)} -> {idx}")
+        
+        if not validated_indices:
+            logger.warning("所有页面号都无效，将处理所有页面")
+            return None
+        
+        # 去重并排序
+        validated_indices = sorted(list(set(validated_indices)))
+        
+        # ✅ 友好的日志显示
+        user_page_numbers = [idx + 1 for idx in validated_indices]  # 转换回用户认知的页面号
+        logger.info(f"用户选择页面: {user_page_numbers} -> 内部索引: {validated_indices}")
+        
+        return validated_indices
+        
+    except Exception as e:
+        logger.error(f"验证页面索引时出错: {e}", exc_info=True)
+        logger.warning("页面索引验证失败，将处理所有页面")
+        return None
 
 def run_change_ppt_subprocess(ppt_path, save_path, translated_json_path, mode='paragraph'):
     """
@@ -387,6 +464,7 @@ def run_change_ppt_subprocess(ppt_path, save_path, translated_json_path, mode='p
         logger.error(f"运行子进程时出错: {str(e)}", exc_info=True)
         return None
     finally:
+        # 删除翻译json的临时文件，若要保留，则注释掉下面的代码
         try:
             if os.path.exists(translated_json_path):
                 os.remove(translated_json_path)
@@ -396,18 +474,19 @@ def run_change_ppt_subprocess(ppt_path, save_path, translated_json_path, mode='p
         pass
 
 def pyuno_controller(presentation_path: str,
-                                   stop_words_list: List[str],
-                                   custom_translations: Dict[str, str],
-                                   select_page: List[int],
-                                   source_language: str,
-                                   target_language: str,
-                                   bilingual_translation: str,
-                                   progress_callback=None,
-                                   model:str='qwen'):
+                     stop_words_list: List[str],
+                     custom_translations: Dict[str, str],
+                     select_page: List[int],
+                     source_language: str,
+                     target_language: str,
+                     bilingual_translation: str,
+                     progress_callback=None,
+                     model: str = 'qwen'):
     """
-    主控制器函数（支持段落层级）
+    主控制器函数（支持段落层级和页面选择）
     
     参数说明：
+    - select_page: 要处理的页面索引列表（从0开始），空列表表示处理所有页面
     - bilingual_translation: 翻译模式，支持以下值：
       * "replace": 替换原文
       * "append": 在末尾追加译文
@@ -432,6 +511,7 @@ def pyuno_controller(presentation_path: str,
     
     logger.info(f"开始处理PPT（段落层级翻译支持）: {presentation_path}")
     logger.info(f"翻译模式: {bilingual_translation}")
+    logger.info(f"指定页面: {select_page if select_page else '所有页面'}")
     logger.info("新功能：支持段落级别的精确翻译和格式保持")
     
     # 检查PPT文件是否存在
@@ -443,17 +523,29 @@ def pyuno_controller(presentation_path: str,
     file_size = os.path.getsize(presentation_path)
     logger.info(f"PPT文件大小: {file_size / (1024*1024):.2f} MB")
     
-    # 第一步：使用子进程加载PPT
-    logger.info("开始第一步：加载PPT内容（段落层级）")
-    ppt_data = run_load_ppt_subprocess(presentation_path)
+    # 第一步：使用子进程加载PPT（支持页面选择）
+    logger.info("开始第一步：加载PPT内容（段落层级，支持页面选择）")
+    
+    # 传递页面选择参数到子进程
+    ppt_data = run_load_ppt_subprocess(presentation_path, select_page)
     
     if not ppt_data:
         logger.error("无法加载PPT内容，请检查LibreOffice服务是否正在运行")
         return None
     
+    # 记录实际加载的页面信息
+    actual_pages = ppt_data.get('pages', [])
+    if select_page:
+        logger.info(f"页面选择完成：请求处理页面 {select_page}，实际加载 {len(actual_pages)} 页")
+        # 显示实际处理的页面索引
+        actual_page_indices = [page.get('page_index', -1) for page in actual_pages]
+        logger.info(f"实际处理的页面索引: {actual_page_indices}")
+    else:
+        logger.info(f"加载所有页面完成，共 {len(actual_pages)} 页")
+    
     logger.info("PPT加载完成，准备进行第二步处理...")
     
-    # 第二步：翻译PPT内容
+    # 第二步：翻译PPT内容（其余代码保持不变）
     logger.info("开始第二步：翻译PPT内容（段落层级）")
     try:
         # 提取文本片段（支持段落层级）
@@ -466,6 +558,7 @@ def pyuno_controller(presentation_path: str,
         # 显示准备输入到API的内容
         logger.info("=" * 60)
         logger.info("准备输入到翻译API的内容（按文本框段落分组）:")
+        logger.info(json.dumps(text_boxes_data, ensure_ascii=False, indent=2))
         logger.info("=" * 60)
         
         # 显示每个文本框段落的内容
@@ -491,7 +584,7 @@ def pyuno_controller(presentation_path: str,
         
         try:
             from api_translate_uno import translate_pages_by_page, validate_translation_result
-            translation_results = translate_pages_by_page(text_boxes_data,progress_callback, source_language, target_language,model)
+            translation_results = translate_pages_by_page(text_boxes_data, progress_callback, source_language, target_language, model)
             
             logger.info(f"翻译完成，共处理 {len(translation_results)} 页")
             
@@ -514,13 +607,10 @@ def pyuno_controller(presentation_path: str,
                 else:
                     box_paragraph_translations = result['translated_fragments']
                     logger.info(f"  翻译文本框段落数: {len(box_paragraph_translations)}")
-                    # logger.info(f"  翻译JSON: {result['translated_json']}")
                     
                     # 显示每个文本框段落的翻译结果
                     for box_para_key, fragments in box_paragraph_translations.items():
                         logger.info(f"    文本框段落 {box_para_key}:")
-                        # for i, fragment in enumerate(fragments):
-                        #     logger.info(f"      片段 {i+1}: '{fragment}'")
                 
                 logger.info("-" * 40)
             
@@ -528,7 +618,7 @@ def pyuno_controller(presentation_path: str,
             logger.info("=" * 60)
             logger.info("完整的translation_results结构:")
             logger.info("=" * 60)
-            # logger.info(json.dumps(translation_results, ensure_ascii=False, indent=2))
+            logger.info(json.dumps(translation_results, ensure_ascii=False, indent=2))
             logger.info("=" * 60)
             
             # 保存翻译结果到temp_result目录
@@ -549,6 +639,10 @@ def pyuno_controller(presentation_path: str,
             result_filename = f"translated_result_paragraphs_{timestamp}.json"
             result_file_path = os.path.join(temp_result_dir, result_filename)
             
+            # 不保存翻译结果，若要保存，则取消注释下面的代码
+            # with open(result_file_path, 'w', encoding='utf-8') as f:
+            #     json.dump(translation_results, f, ensure_ascii=False, indent=2)
+            
             logger.info("第二步完成（按页翻译API调用完成，结果已保存）")
             
             # 第三步：将翻译结果映射回原PPT数据结构
@@ -560,7 +654,6 @@ def pyuno_controller(presentation_path: str,
                 translated_ppt_data = map_translation_results_back(ppt_data, translation_results, text_boxes_data)
                 
                 logger.info("翻译结果映射完成")
-                # logger.info(f"翻译元数据: {translated_ppt_data.get('translation_metadata', {})}")
                 
                 # 保存包含翻译的完整PPT数据
                 logger.info("=" * 60)
@@ -593,7 +686,14 @@ def pyuno_controller(presentation_path: str,
                     input_dir = os.path.dirname(presentation_path)
                     input_filename = os.path.splitext(os.path.basename(presentation_path))[0]
                     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                    output_filename = f"{input_filename}_translated_paragraphs_{timestamp}.odp"
+                    
+                    # 根据是否选择了特定页面来命名输出文件
+                    if select_page:
+                        page_info = f"pages_{'-'.join(map(str, select_page))}"
+                        output_filename = f"{input_filename}_translated_paragraphs_{page_info}_{timestamp}.odp"
+                    else:
+                        output_filename = f"{input_filename}_translated_paragraphs_{timestamp}.odp"
+                    
                     output_pptx_path = os.path.join(input_dir, output_filename)
                     
                     logger.info(f"输入PPT路径: {presentation_path}")
@@ -606,11 +706,10 @@ def pyuno_controller(presentation_path: str,
                         ppt_path=presentation_path,
                         save_path=output_pptx_path,
                         translated_json_path=ppt_with_translation_path,
-                        # TODO: 需要修改为bilingual_translation,模式选择尚未完善，写完了记得改。
                         mode="paragraph"
                     )
 
-                    # ====== 新增：检测libreoffice服务是否存活 ======
+                    # 检测libreoffice服务是否存活
                     alive = check_soffice_alive()
                     logger.info(f"第二次测试LibreOffice headless 服务状态，在调用修改ppt后: {alive}")
                     if alive:
@@ -618,7 +717,7 @@ def pyuno_controller(presentation_path: str,
                     else:
                         logger.warning("LibreOffice headless 服务已关闭（未检测到soffice进程）")
 
-                    # 获取项目根目录（load_ppt.py 往上退三层）
+                    # 获取项目根目录
                     project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..'))
                     result_pptx_path_abs = os.path.abspath(os.path.join(project_root, result_pptx_path))
                     if not os.path.exists(result_pptx_path_abs):
@@ -632,7 +731,7 @@ def pyuno_controller(presentation_path: str,
                         logger.info(f"翻译后的PPT文件: {result_pptx_path_abs}")
                         logger.info(f"文件大小: {os.path.getsize(result_pptx_path_abs) / (1024*1024):.2f} MB")
                         logger.info("=" * 60)
-                        # ====== ODP转PPTX ======
+                        # ODP转PPTX
                         pptx_path = convert_odp_to_pptx(result_pptx_path_abs)
                         if pptx_path:
                             logger.info(f"ODP转PPTX成功，最终PPTX文件: {pptx_path}")
@@ -640,21 +739,21 @@ def pyuno_controller(presentation_path: str,
                         else:
                             logger.error("ODP转PPTX失败，请检查LibreOffice命令行环境")
                             return None
-                        # ====== 删除中间ODP文件 ======
+                        # 删除中间ODP文件
                         try:
                             os.remove(result_pptx_path_abs)
                             logger.info(f"已删除中间ODP文件: {result_pptx_path_abs}")
                         except Exception as e:
                             logger.warning(f"删除ODP文件失败: {e}")
                         
-                        # ====== 记录处理结果统计（段落层级） ======
+                        # 记录处理结果统计（段落层级）
                         stats = ppt_data.get('statistics', {})
                         total_pages = stats.get('total_pages', 0)
                         total_boxes = stats.get('total_boxes', 0)
                         total_paragraphs = stats.get('total_paragraphs', 0)
                         total_fragments = stats.get('total_fragments', 0)
                         
-                        # ====== 计算翻译统计 ======
+                        # 计算翻译统计
                         successful_translations = 0
                         total_translated_box_paragraphs = 0
                         if 'translation_results' in locals():
@@ -670,9 +769,14 @@ def pyuno_controller(presentation_path: str,
                         logger.info(f"  - 成功翻译页数: {successful_translations}")
                         logger.info(f"  - 翻译文本框段落数: {total_translated_box_paragraphs}")
                         
+                        # 如果选择了特定页面，显示页面选择统计
+                        if select_page:
+                            logger.info(f"  - 请求处理页面: {select_page}")
+                            logger.info(f"  - 实际处理页面数: {len(actual_pages)}")
+                        
                         log_execution_time(logger, "pyuno_controller", start_time)
 
-                        # ====== 新增：检测libreoffice服务是否存活 ======
+                        # 检测libreoffice服务是否存活
                         alive = check_soffice_alive()
                         logger.info(f"第三次测试LibreOffice headless 服务状态，在返回最终PPTX路径后: {alive}")
                         if alive:
@@ -680,7 +784,7 @@ def pyuno_controller(presentation_path: str,
                         else:
                             logger.warning("LibreOffice headless 服务已关闭（未检测到soffice进程）")
                         
-                        # ====== 返回最终PPTX路径 ======
+                        # 返回最终PPTX路径
                         return pptx_path
                     else:
                         logger.error("第四步失败：生成翻译PPT文件失败")

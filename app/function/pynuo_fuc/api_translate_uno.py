@@ -243,13 +243,35 @@ def separate_translate_text(text_translate):
     else:
         raise ValueError("翻译结果JSON格式不正确")
 
+
+def validate_page_indices(text_boxes_data):
+    """
+    验证页面索引的正确性，检测可能的页面索引重新映射bug
+    """
+    logger = get_logger("pyuno")
+    page_indices = set(bp['page_index'] for bp in text_boxes_data)
+    page_indices_sorted = sorted(page_indices)
+    
+    logger.info(f"检测到的页面索引: {page_indices_sorted}")
+    
+    # 检查是否是连续的 0,1,2... 序列（可能是重新映射bug的特征）
+    if len(page_indices_sorted) > 1 and page_indices_sorted == list(range(len(page_indices_sorted))):
+        logger.warning("⚠️  检测到连续的页面索引序列 (0,1,2,...)，这可能表明存在页面索引重新映射bug！")
+        logger.warning("⚠️  如果用户选择的不是连续页面，请检查 ppt_data_utils.py 中的 extract_texts_for_translation 函数")
+    else:
+        logger.info("✅ 页面索引看起来正确（不是简单的重新映射序列）")
+    
+    return page_indices
+
+
 def format_page_text_for_translation(text_boxes_data, page_index):
     """
     格式化指定页面的文本用于翻译API调用（支持段落层级）
+    ✅ 修复版本：增强页面索引验证和日志
     
     Args:
         text_boxes_data: 文本框段落数据列表
-        page_index: 要处理的页面索引
+        page_index: 要处理的页面索引（PPT中的真实页面索引）
         
     Returns:
         str: 格式化后的页面文本内容
@@ -258,9 +280,11 @@ def format_page_text_for_translation(text_boxes_data, page_index):
     page_box_paragraphs = [box_para for box_para in text_boxes_data if box_para['page_index'] == page_index]
     
     if not page_box_paragraphs:
+        logger.warning(f"⚠️  页面索引 {page_index} 没有找到对应的文本框段落数据")
         return ""
     
-    formatted_text = f"第{page_index + 1}页内容：\n\n"
+    # ✅ 更清晰的页面标识，明确显示这是PPT中的真实页面索引
+    formatted_text = f"第{page_index + 1}页内容（PPT原始页面索引：{page_index}）：\n\n"
     
     # 按文本框和段落组织数据
     box_paragraphs_dict = {}
@@ -285,31 +309,40 @@ def format_page_text_for_translation(text_boxes_data, page_index):
             formatted_text += f"【文本框{box_index + 1}-段落{paragraph_index + 1}】\n"
             formatted_text += f"{box_para['combined_text']}\n\n"
     
-    logger.debug(f"第 {page_index + 1} 页格式化了 {len(page_box_paragraphs)} 个文本框段落")
+    logger.debug(f"PPT第 {page_index + 1} 页（原始索引{page_index}）格式化了 {len(page_box_paragraphs)} 个文本框段落")
     return formatted_text.strip()
 
-def translate_pages_by_page(text_boxes_data, progress_callback,source_language='en', target_language='zh',model='qwen',):
+def translate_pages_by_page(text_boxes_data, progress_callback, source_language='en', target_language='zh', model='qwen'):
     """
     按页翻译文本内容，每页调用一次翻译API（支持段落层级）
+    ✅ 修复版本：正确处理页面索引和进度回调
     
     Args:
         text_boxes_data: 文本框段落数据列表
+        progress_callback: 进度回调函数
         source_language: 源语言
         target_language: 目标语言
+        model: 使用的翻译模型
         
     Returns:
         dict: 翻译结果，格式为 {page_index: translated_content}
     """
     logger.info(f"开始按页翻译（段落层级），共 {len(text_boxes_data)} 个文本框段落")
     
-    # 获取所有页面索引
-    page_indices = set(box_para['page_index'] for box_para in text_boxes_data)
-    logger.info(f"需要翻译的页面: {sorted(page_indices)}")
+    # ✅ 新增：验证页面索引的正确性
+    page_indices = validate_page_indices(text_boxes_data)
+    page_indices_sorted = sorted(page_indices)
+    total_pages = len(page_indices_sorted)
     
-    # 显示每页的文本框段落统计
-    for page_index in sorted(page_indices):
+    logger.info(f"需要翻译的页面索引: {page_indices_sorted}")
+    logger.info(f"总共需要翻译 {total_pages} 页")
+    
+    # ✅ 增强：显示每页的详细统计，验证页面索引正确性
+    logger.info("=" * 50)
+    logger.info("各页面文本框段落分布验证:")
+    for page_index in page_indices_sorted:
         page_box_paragraphs = [bp for bp in text_boxes_data if bp['page_index'] == page_index]
-        logger.info(f"第 {page_index + 1} 页有 {len(page_box_paragraphs)} 个文本框段落")
+        logger.info(f"PPT第 {page_index + 1} 页（原始索引{page_index}）: {len(page_box_paragraphs)} 个文本框段落")
         
         # 显示详细的文本框段落分布
         box_para_dist = {}
@@ -320,60 +353,77 @@ def translate_pages_by_page(text_boxes_data, progress_callback,source_language='
             box_para_dist[box_idx] += 1
         
         for box_idx in sorted(box_para_dist.keys()):
-            logger.info(f"  文本框 {box_idx + 1}: {box_para_dist[box_idx]} 个段落")
+            logger.info(f"    文本框 {box_idx + 1}: {box_para_dist[box_idx]} 个段落")
+    logger.info("=" * 50)
     
     translation_results = {}
+    
+    # 初始化进度回调
     if progress_callback:
-        progress_callback(0, len(page_indices))
-    for page_index in sorted(page_indices):
-        logger.info(f"正在处理第 {page_index + 1} 页...")
+        progress_callback(0, total_pages)
+    
+    # ✅ 修复：使用枚举来获取正确的进度序号，同时保持真实的页面索引
+    for current_page_number, page_index in enumerate(page_indices_sorted, 1):
+        logger.info("=" * 60)
+        logger.info(f"正在处理第 {current_page_number}/{total_pages} 页")
+        logger.info(f"对应PPT第 {page_index + 1} 页（原始页面索引：{page_index}）")
+        logger.info("=" * 60)
+        
+        # ✅ 修复：使用正确的当前页面数进行进度回调
         if progress_callback:
-            progress_callback(page_index , len(page_indices))
+            progress_callback(current_page_number - 1, total_pages)
+        
         # 生成该页的格式化文本
         page_content = format_page_text_for_translation(text_boxes_data, page_index)
         
         if not page_content:
-            logger.warning(f"第 {page_index + 1} 页没有文本内容，跳过")
+            logger.warning(f"PPT第 {page_index + 1} 页（原始索引{page_index}）没有文本内容，跳过")
             continue
         
-        logger.info(f"第 {page_index + 1} 页格式化文本:")
+        logger.info(f"PPT第 {page_index + 1} 页格式化完成:")
+        logger.info(f"  格式化文本长度: {len(page_content)} 字符")
         logger.info("-" * 40)
-        # logger.info(page_content)
+        # logger.info(page_content)  # 可以取消注释查看详细内容
         logger.info("-" * 40)
         
         try:
             # 调用翻译API
-            logger.info(f"正在调用翻译API翻译第 {page_index + 1} 页...")
-            translated_result = translate(page_content,model)          
-            logger.info(f"第 {page_index + 1} 页翻译完成")
+            logger.info(f"正在调用翻译API翻译PPT第 {page_index + 1} 页...")
+            translated_result = translate(page_content, model)          
+            logger.info(f"PPT第 {page_index + 1} 页翻译完成")
+            
             logger.info("翻译结果:")
+            logger.info(f"  翻译结果长度: {len(translated_result)} 字符")
             logger.info("-" * 40)
-            # logger.info(translated_result)
+            # logger.info(translated_result)  # 可以取消注释查看详细内容
             logger.info("-" * 40)
             
             # 解析翻译结果
             translated_fragments = separate_translate_text(translated_result)
             
-            # 存储翻译结果 - 现在translated_fragments是按文本框段落索引组织的
+            # 存储翻译结果 - 使用真实的页面索引作为键
             page_box_paragraphs = [bp for bp in text_boxes_data if bp['page_index'] == page_index]
             
-            translation_results[page_index] = {
+            translation_results[page_index] = {  # ✅ 使用真实的页面索引作为键
                 'original_content': page_content,
                 'translated_json': translated_result,
-                'translated_fragments': translated_fragments,  # 现在是 {box_paragraph_key: fragments}
+                'translated_fragments': translated_fragments,
                 'box_paragraph_count': len(page_box_paragraphs),
-                'box_count': len(set(bp['box_index'] for bp in page_box_paragraphs))  # 实际的文本框数量
+                'box_count': len(set(bp['box_index'] for bp in page_box_paragraphs)),
+                'ppt_page_number': page_index + 1,  # PPT中的显示页码
+                'processing_sequence': current_page_number,  # 处理序号
+                'original_page_index': page_index  # 原始页面索引
             }
             
-            logger.info(f"第 {page_index + 1} 页翻译完成，得到 {len(translated_fragments)} 个文本框段落的翻译")
+            logger.info(f"PPT第 {page_index + 1} 页翻译完成，得到 {len(translated_fragments)} 个文本框段落的翻译")
             
             # 显示翻译结果的键值对应关系
             logger.info("翻译结果键值映射:")
             for key, fragments in translated_fragments.items():
-                logger.info(f"  {key}: {len(fragments)} 个片段")
+                logger.info(f"    {key}: {len(fragments)} 个片段")
             
         except Exception as e:
-            logger.error(f"翻译第 {page_index + 1} 页时出错: {e}", exc_info=True)
+            logger.error(f"翻译PPT第 {page_index + 1} 页时出错: {e}", exc_info=True)
             # 如果翻译失败，记录错误信息
             page_box_paragraphs = [bp for bp in text_boxes_data if bp['page_index'] == page_index]
             translation_results[page_index] = {
@@ -381,10 +431,19 @@ def translate_pages_by_page(text_boxes_data, progress_callback,source_language='
                 'error': str(e),
                 'translated_fragments': {},
                 'box_paragraph_count': len(page_box_paragraphs),
-                'box_count': len(set(bp['box_index'] for bp in page_box_paragraphs))
+                'box_count': len(set(bp['box_index'] for bp in page_box_paragraphs)),
+                'ppt_page_number': page_index + 1,
+                'processing_sequence': current_page_number,
+                'original_page_index': page_index
             }
     
+    # 完成进度回调
+    if progress_callback:
+        progress_callback(total_pages, total_pages)
+    
+    logger.info("=" * 60)
     logger.info(f"按页翻译完成，共处理 {len(translation_results)} 页")
+    logger.info("=" * 60)
     
     # 显示统计信息
     successful_pages = len([r for r in translation_results.values() if 'error' not in r])
@@ -397,6 +456,15 @@ def translate_pages_by_page(text_boxes_data, progress_callback,source_language='
     logger.info(f"  - 翻译失败页数: {failed_pages}")
     logger.info(f"  - 总翻译文本框数: {total_boxes_translated}")
     logger.info(f"  - 总翻译文本框段落数: {total_box_paragraphs_translated}")
+    
+    # ✅ 增强：显示详细的页面处理信息，验证页面索引映射正确性
+    logger.info("详细页面处理验证:")
+    for page_index, result in translation_results.items():
+        ppt_page_num = result.get('ppt_page_number', page_index + 1)
+        processing_seq = result.get('processing_sequence', '?')
+        original_idx = result.get('original_page_index', page_index)
+        status = "成功" if 'error' not in result else f"失败({result.get('error', 'unknown')[:50]}...)"
+        logger.info(f"  处理序号 {processing_seq}: PPT第{ppt_page_num}页（原始索引{original_idx}）- {status}")
     
     return translation_results
 
