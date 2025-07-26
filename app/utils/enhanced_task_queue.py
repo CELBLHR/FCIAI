@@ -24,11 +24,11 @@ class TranslationTask:
     """翻译任务类，用于存储任务信息"""
 
     def __init__(self, task_id: str, user_id: int, user_name: str,
-                file_path: str, task_type: str = 'ppt_translate',
+                file_path: str,model:str, task_type: str = 'ppt_translate',
                 source_language: str = 'en', target_language: str = 'zh-cn',
                 priority: int = 0, annotation_filename: str = None,
                 annotation_json: Dict = None, select_page: List[int] = None,
-                bilingual_translation: bool = False, model:str='qwen', **kwargs):
+                bilingual_translation: str = 'paragraph_up',  **kwargs):
         """
         初始化翻译任务
 
@@ -162,11 +162,11 @@ class EnhancedTranslationQueue:
                 # 启动定期回收数据库连接的后台线程
                 self.schedule_db_connection_recycling()
 
-    def add_task(self, user_id: int, user_name: str, file_path: str,
+    def add_task(self, user_id: int, user_name: str, file_path: str,model:str,
                 task_type: str = 'ppt_translate', source_language: str = 'en',
                 target_language: str = 'zh-cn', priority: int = 0,
                 annotation_filename: str = None, annotation_json: Dict = None,
-                select_page: List[int] = None, bilingual_translation: bool = False,model:str='qwen', **kwargs) -> int:
+                select_page: List[int] = None, bilingual_translation: str = "paragraph_up",**kwargs) -> int:
         """
         添加任务到队列
 
@@ -957,7 +957,7 @@ class EnhancedTranslationQueue:
                     custom_translations=custom_translations,
                     source_language=task.source_language,
                     target_language=task.target_language,
-                    bilingual_translation=str(int(task.bilingual_translation)),
+                    bilingual_translation=task.bilingual_translation,
                     progress_callback=progress_callback,
                     model=task.model
                 )
@@ -970,7 +970,7 @@ class EnhancedTranslationQueue:
                     select_page=task.select_page,
                     source_language=task.source_language,
                     target_language=task.target_language,
-                    bilingual_translation=str(int(task.bilingual_translation)),
+                    bilingual_translation=task.bilingual_translation,
                     progress_callback=progress_callback,
                     model=task.model
                 )

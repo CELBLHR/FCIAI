@@ -8,6 +8,7 @@ sys.path.insert(0, os.path.dirname(__file__))
 
 import json
 import re
+import requests  # 新增：用于调用后端API
 from logger_config import get_logger
 from openai import OpenAI
 import unicodedata
@@ -18,78 +19,190 @@ logger = get_logger("pyuno")
 
 QWEN_API_KEY = os.getenv("QWEN_API_KEY")
 DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY")
-def translate(text, model = "qwen"):
+
+def translate(text, model):
     if model == "qwen":
         logger.info("model参数设置为qwen,使用qwen2.5-72b-instruct模型")
         client = OpenAI(api_key=QWEN_API_KEY, base_url="https://dashscope.aliyuncs.com/compatible-mode/v1")
         used_model = "qwen2.5-72b-instruct"
+        response = client.chat.completions.create(
+            model = used_model,
+            messages=[
+                {"role": "system", "content": f"""您是翻译领域的专家。接下来，您将获得一系列文本（包括短语、句子和单词），他们是隶属于同一个PPT的同一页面下的文本框段落的所有文本。
+                                                  请将每一段文本翻译成专业的中文。
+                                                  1. 上传的将是一个格式化文本，结构如下：
+                                                    第1页内容：
+
+                                                    【文本框1-段落1】
+                                                    【文本框1-段落1内的原始文本】
+
+                                                    【文本框1-段落2】
+                                                    【文本框1-段落2内的原始文本】
+
+                                                    【文本框2-段落1】
+                                                    【文本框2-段落1内的原始文本】
+                                                     
+                                                    每一个文本元素都是该PPT页面内一个文本框的一个段落的完整内容，请**保持整体性**，即便出现换行符等特殊符号，也务必完整翻译全文,同时保留这些换行符。
+                                                  2. 原文中存在形式为[block]的分隔符，该符的作用是区分不同字体格式的文本，请不要对[block]符进行翻译。但是在翻译后的内容中你仍然需要在最后处理时要插入与原文相同数量的[block]符,且插入的位置应该在与原文相同词义的位置，以此作为后续格式处理的标记。
+                                                     你需要保证翻译后的内容中，[block]符的个数与原文相同，这也就代表着译前译后拥有相同数量的文本片段，这些文段有不同的字体格式，但一一对应。
+                                                  3. 不要输出任何不可见字符、控制字符、特殊符号
+                                                  4. 如果原文出现了中文甚至全文段都是中文，就将中文写在source_language中，且target_language中仍然保留。
+                                                  5. 输出格式应严格保持输入顺序，一段对应一段，使用如下 JSON 格式输出：
+                                                  [
+                                                      {{
+                                                          \"box_index\": 1,
+                                                          \"paragraph_index\": 1,
+                                                          \"source_language\": \"【文本框1-段落1的原始文本】\",
+                                                          \"target_language\": \"【文本框1-段落1的翻译】\"
+                                                      }},
+                                                      {{
+                                                          \"box_index\": 1,
+                                                          \"paragraph_index\": 2,
+                                                          \"source_language\": \"【文本框1-段落2的原始文本】\",
+                                                          \"target_language\": \"【文本框1-段落2的翻译】\"
+                                                      }},
+                                                      {{
+                                                          \"box_index\": 2,
+                                                          \"paragraph_index\": 1,
+                                                          \"source_language\": \"【文本框2-段落1的原始文本】\",
+                                                          \"target_language\": \"【文本框2-段落1的翻译】\"
+                                                      }}
+                                                  ]
+                                                  **重要：请严格遵守以下翻译规则**：
+                                                  1. **格式要求**：
+                                                      - 对每个文本框段落，输出一个 JSON 对象，格式如下：
+                                                      {{
+                                                          \"box_index\": 文本框序号,
+                                                          \"paragraph_index\": 段落序号,
+                                                          \"source_language\": \"原语言文本\",
+                                                          \"target_language\": \"译文\"
+                                                      }}
+                                                      - 按文本框段落顺序在 **同一个 JSON 数组** 内输出
+                                                      - **不要输出额外信息、注释或多余文本**。
+                                                      - box_index 和 paragraph_index 必须与输入中的【文本框X-段落Y】序号完全对应
+                                                  现在，请按照上述规则翻译文本"""},
+                {"role": "user", "content": text}
+            ],
+            stream=False
+        )
+        return response.choices[0].message.content
+    
     elif model == "deepseek":
-        logger.info("model参数设置为deepseek,使用deepseek-chat模型")
-        client = OpenAI(api_key=DEEPSEEK_API_KEY, base_url="https://api.deepseek.com/v1")
-        used_model = "deepseek-chat"
+        logger.info("model参数设置为deepseek,使用后端translate_ppt_page接口")
+        return call_backend_translate_ppt_page(text, "deepseek")
+    
+    elif model == "gpt4o":
+        logger.info("model参数设置为gpt4o,使用后端translate_ppt_page接口")
+        return call_backend_translate_ppt_page(text, "gpt4o")
+    
     else:
-        raise ValueError(f"不支持的模型: {model}") 
-    response = client.chat.completions.create(
-        model = used_model,
-        messages=[
-            {"role": "system", "content": f"""您是翻译领域的专家。接下来，您将获得一系列文本（包括短语、句子和单词），他们是隶属于同一个PPT的同一页面下的文本框段落的所有文本。
-                                              请将每一段文本翻译成专业的中文。
-                                              1. 上传的将是一个格式化文本，结构如下：
-                                                第1页内容：
+        raise ValueError(f"不支持的模型: {model}")
 
-                                                【文本框1-段落1】
-                                                【文本框1-段落1内的原始文本】
-
-                                                【文本框1-段落2】
-                                                【文本框1-段落2内的原始文本】
-
-                                                【文本框2-段落1】
-                                                【文本框2-段落1内的原始文本】
-                                                 
-                                                每一个文本元素都是该PPT页面内一个文本框的一个段落的完整内容，请**保持整体性**，即便出现换行符等特殊符号，也务必完整翻译全文,同时保留这些换行符。
-                                              2. 原文中存在形式为[block]的分隔符，该符的作用是区分不同字体格式的文本，请不要对[block]符进行翻译。但是在翻译后的内容中你仍然需要在最后处理时要插入与原文相同数量的[block]符,且插入的位置应该在与原文相同词义的位置，以此作为后续格式处理的标记。
-                                                 你需要保证翻译后的内容中，[block]符的个数与原文相同，这也就代表着译前译后拥有相同数量的文本片段，这些文段有不同的字体格式，但一一对应。
-                                              3. 不要输出任何不可见字符、控制字符、特殊符号
-                                              4. 如果原文出现了中文甚至全文段都是中文，就将中文写在source_language中，且target_language中仍然保留。
-                                              5. 输出格式应严格保持输入顺序，一段对应一段，使用如下 JSON 格式输出：
-                                              [
-                                                  {{
-                                                      \"box_index\": 1,
-                                                      \"paragraph_index\": 1,
-                                                      \"source_language\": \"【文本框1-段落1的原始文本】\",
-                                                      \"target_language\": \"【文本框1-段落1的翻译】\"
-                                                  }},
-                                                  {{
-                                                      \"box_index\": 1,
-                                                      \"paragraph_index\": 2,
-                                                      \"source_language\": \"【文本框1-段落2的原始文本】\",
-                                                      \"target_language\": \"【文本框1-段落2的翻译】\"
-                                                  }},
-                                                  {{
-                                                      \"box_index\": 2,
-                                                      \"paragraph_index\": 1,
-                                                      \"source_language\": \"【文本框2-段落1的原始文本】\",
-                                                      \"target_language\": \"【文本框2-段落1的翻译】\"
-                                                  }}
-                                              ]
-                                              **重要：请严格遵守以下翻译规则**：
-                                              1. **格式要求**：
-                                                  - 对每个文本框段落，输出一个 JSON 对象，格式如下：
-                                                  {{
-                                                      \"box_index\": 文本框序号,
-                                                      \"paragraph_index\": 段落序号,
-                                                      \"source_language\": \"原语言文本\",
-                                                      \"target_language\": \"译文\"
-                                                  }}
-                                                  - 按文本框段落顺序在 **同一个 JSON 数组** 内输出
-                                                  - **不要输出额外信息、注释或多余文本**。
-                                                  - box_index 和 paragraph_index 必须与输入中的【文本框X-段落Y】序号完全对应
-                                              现在，请按照上述规则翻译文本"""},
-            {"role": "user", "content": text}
-        ],
-        stream=False
-    )
-    return response.choices[0].message.content
+def call_backend_translate_ppt_page(text, model, timeout=120):
+    """
+    调用后端的translate_ppt_page接口
+    
+    Args:
+        text: 要翻译的文本
+        model: 模型类型 ("deepseek" 或 "gpt4o")
+        timeout: 超时时间（秒）
+        
+    Returns:
+        str: 大模型的原始response（直接返回data）
+    """
+    # API基础地址和端点配置（使用api_test.py中的配置）
+    base_url = "http://117.50.216.15/agent_server/app/run/"
+    
+    # 使用api_test.py中的端点ID
+    endpoints = {
+        "gpt4o": "1da9015cc155411aa433a24a05350324",
+        "deepseek": "ffac6e70d36749a2890dbe134d181d38"
+    }
+    
+    if model not in endpoints:
+        raise ValueError(f"不支持的后端模型: {model}")
+    
+    endpoint_id = endpoints[model]
+    url = f"{base_url}{endpoint_id}"
+    
+    # 构建请求载荷
+    payload = {
+        "_streaming": False,
+        "is_app_uid": False,
+        "text": text
+    }
+    
+    headers = {
+        'Content-Type': 'application/json',
+        'User-Agent': 'Python-API-Client/1.0'
+    }
+    
+    try:
+        logger.info(f"正在调用后端API: {url}")
+        logger.debug(f"请求载荷: {json.dumps(payload, ensure_ascii=False, indent=2)}")
+        
+        response = requests.post(url, json=payload, headers=headers, timeout=timeout)
+        response.raise_for_status()
+        
+        result = response.json()
+        logger.debug(f"后端API原始响应: {json.dumps(result, ensure_ascii=False, indent=2)}")
+        
+        # 检查响应状态
+        if result.get("code") == 200:
+            data = result.get("data", "")
+            logger.info(f"后端API调用成功，处理返回数据")
+            
+            # 如果data是字典且包含output字段，提取output并转换为JSON字符串
+            if isinstance(data, dict) and 'output' in data:
+                output_data = data['output']
+                json_result = json.dumps(output_data, ensure_ascii=False)
+                logger.info(f"提取output字段并转换为JSON字符串，长度: {len(json_result)} 字符")
+                return json_result
+            
+            # 如果data已经是字符串，直接返回
+            elif isinstance(data, str):
+                logger.info(f"data已经是字符串，直接返回")
+                return data
+            
+            # 如果data是列表，转换为JSON字符串
+            elif isinstance(data, list):
+                json_result = json.dumps(data, ensure_ascii=False)
+                logger.info(f"data是列表，转换为JSON字符串，长度: {len(json_result)} 字符")
+                return json_result
+            
+            # 其他情况，尝试转换为JSON字符串
+            else:
+                try:
+                    json_result = json.dumps(data, ensure_ascii=False)
+                    logger.info(f"data转换为JSON字符串，长度: {len(json_result)} 字符")
+                    return json_result
+                except Exception as e:
+                    logger.error(f"无法将data转换为JSON字符串: {e}")
+                    raise ValueError(f"后端返回的数据格式无法处理: {type(data)}")
+        else:
+            error_msg = result.get('msg', '未知错误')
+            logger.error(f"后端API调用失败: 状态码 {result.get('code')}, 错误信息: {error_msg}")
+            raise ValueError(f"后端API调用失败: {error_msg}")
+    
+    except requests.exceptions.Timeout:
+        logger.error(f"后端API调用超时 (超过 {timeout} 秒)")
+        raise ValueError(f"后端API调用超时，请稍后重试")
+    
+    except requests.exceptions.ConnectionError as e:
+        logger.error(f"后端API连接错误: {e}")
+        raise ValueError("无法连接到后端API服务器，请检查网络连接")
+    
+    except requests.exceptions.RequestException as e:
+        logger.error(f"后端API请求异常: {e}")
+        raise ValueError(f"后端API请求失败: {str(e)}")
+    
+    except json.JSONDecodeError as e:
+        logger.error(f"后端API响应不是有效的JSON格式: {e}")
+        raise ValueError("后端API返回的响应格式无效")
+    
+    except Exception as e:
+        logger.error(f"调用后端API时发生未知错误: {e}", exc_info=True)
+        raise ValueError(f"调用后端API时发生错误: {str(e)}")
 
 def clean_translation_text(text: str) -> str:
     """
@@ -200,48 +313,93 @@ def separate_translate_text(text_translate):
     """
     解析翻译后的JSON文本，提取所有target_language字段，并按文本框段落索引组织
     """
+    logger.debug(f"开始解析翻译结果，输入类型: {type(text_translate)}")
+    logger.debug(f"输入内容前100字符: {str(text_translate)[:100]}...")
+    
     # 对json文本进行简单的字符过滤
     text_clean = clean_translation_text(text_translate)
+    logger.debug(f"清理后文本类型: {type(text_clean)}")
+    logger.debug(f"清理后内容前100字符: {str(text_clean)[:100]}...")
     
     # 解析JSON
     try:
         data = parse_formatted_text_async(text_clean)
+        logger.debug(f"JSON解析成功，解析结果类型: {type(data)}")
+        if isinstance(data, list):
+            logger.debug(f"解析结果是列表，长度: {len(data)}")
+            if len(data) > 0:
+                logger.debug(f"第一个元素类型: {type(data[0])}")
+                logger.debug(f"第一个元素: {data[0]}")
+        elif isinstance(data, dict):
+            logger.debug(f"解析结果是字典，键: {list(data.keys())}")
+        elif isinstance(data, str):
+            logger.debug(f"解析结果仍然是字符串，长度: {len(data)}")
+            logger.debug(f"字符串内容前100字符: {data[:100]}...")
+            # 如果还是字符串，尝试再次解析
+            try:
+                data = json.loads(data)
+                logger.debug(f"二次JSON解析成功，结果类型: {type(data)}")
+            except Exception as e2:
+                logger.error(f"二次JSON解析失败: {e2}")
+        else:
+            logger.debug(f"解析结果是其他类型: {type(data)}, 值: {data}")
     except Exception as e:
+        logger.error(f"JSON解析失败: {e}")
         raise ValueError(f"翻译结果不是合法JSON: {e}\n{text_translate}")
     
-    # 处理新的JSON格式：带box_index和paragraph_index的数组
-    if isinstance(data, list):
-        # 新格式：带box_index和paragraph_index的数组
-        box_paragraph_translations = {}
-        
-        for item in data:
-            box_index = item.get("box_index")
-            paragraph_index = item.get("paragraph_index")
-            target_language = item.get("target_language", "")
-            
-            if box_index is not None and paragraph_index is not None:
-                # 创建复合键：box_index_paragraph_index
-                key = f"{box_index}_{paragraph_index}"
-                
-                # 将翻译文本按[block]分割成片段
-                fragments = [seg.strip() for seg in target_language.split('[block]') if seg.strip()]
-                box_paragraph_translations[key] = fragments
-                
-                logger.debug(f"解析文本框 {box_index} 段落 {paragraph_index}: {len(fragments)} 个片段")
-        
-        logger.info(f"解析到 {len(box_paragraph_translations)} 个文本框段落的翻译结果")
-        return box_paragraph_translations
-        
-    elif isinstance(data, dict):
-        # 兼容旧格式：单个对象（为了向后兼容）
-        target_language = data.get("target_language", "")
-        fragments = [seg.strip() for seg in target_language.split('[block]') if seg.strip()]
-        
-        # 假设是第一个文本框的第一个段落
-        return {"1_1": fragments}
+    # 确保data是列表
+    if not isinstance(data, list):
+        logger.error(f"期望解析结果为列表，但得到: {type(data)}")
+        raise ValueError(f"翻译结果解析后不是列表格式，而是: {type(data)}")
     
+    # 处理新的JSON格式：带box_index和paragraph_index的数组
+    box_paragraph_translations = {}
+    
+    for i, item in enumerate(data):
+        logger.debug(f"处理第 {i} 个元素，类型: {type(item)}")
+        
+        if not isinstance(item, dict):
+            logger.error(f"数组元素 {i} 不是字典类型，而是: {type(item)}, 值: {item}")
+            continue
+            
+        box_index = item.get("box_index")
+        paragraph_index = item.get("paragraph_index")
+        target_language = item.get("target_language", "")
+        
+        logger.debug(f"元素 {i}: box_index={box_index}, paragraph_index={paragraph_index}")
+        
+        if box_index is not None and paragraph_index is not None:
+            # 创建复合键：box_index_paragraph_index
+            key = f"{box_index}_{paragraph_index}"
+            
+            # 将翻译文本按[block]分割成片段
+            fragments = [seg.strip() for seg in target_language.split('[block]') if seg.strip()]
+            box_paragraph_translations[key] = fragments
+            
+            logger.debug(f"解析文本框 {box_index} 段落 {paragraph_index}: {len(fragments)} 个片段")
+    
+    logger.info(f"解析到 {len(box_paragraph_translations)} 个文本框段落的翻译结果")
+    return box_paragraph_translations
+
+
+def validate_page_indices(text_boxes_data):
+    """
+    验证页面索引的正确性，检测可能的页面索引重新映射bug
+    """
+    logger = get_logger("pyuno")
+    page_indices = set(bp['page_index'] for bp in text_boxes_data)
+    page_indices_sorted = sorted(page_indices)
+    
+    logger.info(f"检测到的页面索引: {page_indices_sorted}")
+    
+    # 检查是否是连续的 0,1,2... 序列（可能是重新映射bug的特征）
+    if len(page_indices_sorted) > 1 and page_indices_sorted == list(range(len(page_indices_sorted))):
+        logger.warning("⚠️  检测到连续的页面索引序列 (0,1,2,...)，这可能表明存在页面索引重新映射bug！")
+        logger.warning("⚠️  如果用户选择的不是连续页面，请检查 ppt_data_utils.py 中的 extract_texts_for_translation 函数")
     else:
-        raise ValueError("翻译结果JSON格式不正确")
+        logger.info("✅ 页面索引看起来正确（不是简单的重新映射序列）")
+    
+    return page_indices
 
 
 def validate_page_indices(text_boxes_data):
@@ -312,7 +470,7 @@ def format_page_text_for_translation(text_boxes_data, page_index):
     logger.debug(f"PPT第 {page_index + 1} 页（原始索引{page_index}）格式化了 {len(page_box_paragraphs)} 个文本框段落")
     return formatted_text.strip()
 
-def translate_pages_by_page(text_boxes_data, progress_callback, source_language='en', target_language='zh', model='qwen'):
+def translate_pages_by_page(text_boxes_data, progress_callback, source_language, target_language, model):
     """
     按页翻译文本内容，每页调用一次翻译API（支持段落层级）
     ✅ 修复版本：正确处理页面索引和进度回调
@@ -395,7 +553,7 @@ def translate_pages_by_page(text_boxes_data, progress_callback, source_language=
             logger.info("翻译结果:")
             logger.info(f"  翻译结果长度: {len(translated_result)} 字符")
             logger.info("-" * 40)
-            # logger.info(translated_result)  # 可以取消注释查看详细内容
+            logger.info(translated_result)  # 可以取消注释查看详细内容
             logger.info("-" * 40)
             
             # 解析翻译结果
@@ -641,6 +799,23 @@ if __name__ == "__main__":
         logger.info("翻译结果解析测试成功:")
         for key, fragments in translated_fragments.items():
             logger.info(f"  {key}: {fragments}")
+        
+        # 测试后端API调用（如果有网络连接）
+        try:
+            test_text = """第1页内容：
+
+【文本框1-段落1】
+Hello[block]world
+
+【文本框1-段落2】
+This is[block]a test"""
+            
+            logger.info("测试后端API调用 (deepseek):")
+            result = call_backend_translate_ppt_page(test_text, "deepseek")
+            logger.info(f"后端API测试成功，返回data: {result}")
+            
+        except Exception as e:
+            logger.warning(f"后端API测试失败（可能是网络问题）: {e}")
         
     except Exception as e:
         logger.error(f"测试失败: {e}", exc_info=True)

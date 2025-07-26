@@ -260,7 +260,7 @@ def main():
     parser.add_argument('--output', required=True, help='输出PPT文件路径')
     parser.add_argument('--json', required=True, help='包含译文的JSON文件路径')
     parser.add_argument('--mode', default='paragraph', 
-                       choices=['bilingual', 'replace', 'append', 'paragraph'], 
+                       choices=['bilingual', 'replace', 'append', 'paragraph_up', 'paragraph_down'], 
                        help='写入模式')
     
     args = parser.parse_args()

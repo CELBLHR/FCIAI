@@ -109,6 +109,7 @@ def upload_file():
         target_language = request.form.get('target_language', 'zh-cn')
         bilingual_translation = request.form.get('bilingual_translation', '0')
         select_page = request.form.getlist('select_page')
+        model = request.form.get('model', 'qwen')
 
         # 转换select_page为整数列表
         if select_page and select_page[0]:
@@ -224,7 +225,8 @@ def upload_file():
                 source_language=user_language,
                 target_language=target_language,
                 bilingual_translation=bilingual_translation,
-                priority=priority
+                priority=priority,
+                model = model
             )
 
             return jsonify({

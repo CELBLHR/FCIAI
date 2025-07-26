@@ -34,7 +34,7 @@ def insert_soft_line_break(text, cursor, logger=None):
         # 方法1: 尝试使用ControlCharacter.LINE_BREAK
         try:
             import uno
-            from com.sun.star.text.ControlCharacter import LINE_BREAK
+            from com.sun.star.text.ControlCharacter import LINE_BREAK 
             text.insertControlCharacter(cursor, LINE_BREAK, False)
             logger.debug("成功插入软回车（ControlCharacter.LINE_BREAK）")
             return True
@@ -206,7 +206,7 @@ def write_textbox_with_translation_paragraphs(shape, box, mode="paragraph", logg
         logger.error(f"写入文本框时发生异常: {e}", exc_info=True)
         raise
 
-def write_paragraphs_mode(text, cursor, box, mode, logger):
+def write_paragraphs_mode(text, cursor, box, mode, logger, value = 0):
     """
     基于段落层级的写入模式
     
@@ -267,7 +267,7 @@ def write_paragraphs_mode(text, cursor, box, mode, logger):
                     logger.error(f"追加段落 {para_idx + 1} 译文失败: {e}")
                     continue
         
-        elif mode == "paragraph":
+        elif mode == "paragraph_up":
             # 逐段翻译模式：每个段落下方插入对应译文（使用软回车）
             logger.debug("逐段翻译模式：每个段落下方插入对应译文（使用软回车）")
             text.setString("")
@@ -276,7 +276,7 @@ def write_paragraphs_mode(text, cursor, box, mode, logger):
             for para_idx, paragraph in enumerate(paragraphs):
                 logger.debug(f"处理段落 {para_idx + 1}/{len(paragraphs)}...")
                 
-                try:
+                try:               
                     # 1. 写入原文段落
                     write_paragraph_fragments(text, cursor, paragraph, "text", logger)
                     
@@ -308,9 +308,9 @@ def write_paragraphs_mode(text, cursor, box, mode, logger):
             
             logger.debug("逐段翻译写入完成")
         
-        elif mode == "paragraph_soft":
-            # 新增模式：逐段翻译，全部使用软回车
-            logger.debug("逐段翻译模式（全软回车）：所有换行都使用软回车")
+        elif mode == "paragraph_down":
+            # 新增模式：逐段翻译，原文在译文下方
+            logger.debug("逐段翻译模式（原文在译文下方）：")
             text.setString("")
             cursor = text.createTextCursor()
             
@@ -318,18 +318,18 @@ def write_paragraphs_mode(text, cursor, box, mode, logger):
                 logger.debug(f"处理段落 {para_idx + 1}/{len(paragraphs)}...")
                 
                 try:
+                    # 1. 写入译文段落
+                    write_paragraph_fragments(text, cursor, paragraph, "translated_text", logger)
+                    
+                    # 2. 软回车
+                    insert_optimized_line_break(text, cursor, "hard", logger)
+                    
                     # 1. 写入原文段落
                     write_paragraph_fragments(text, cursor, paragraph, "text", logger)
                     
-                    # 2. 软回车
-                    insert_optimized_line_break(text, cursor, "soft", logger)
-                    
-                    # 3. 写入译文段落
-                    write_paragraph_fragments(text, cursor, paragraph, "translated_text", logger)
-                    
                     # 4. 段落间也使用软回车（除了最后一个段落）
                     if para_idx < len(paragraphs) - 1:
-                        insert_optimized_line_break(text, cursor, "soft", logger)
+                        insert_optimized_line_break(text, cursor, "hard", logger)
                         
                 except Exception as e:
                     logger.error(f"处理段落 {para_idx + 1} 失败: {e}")

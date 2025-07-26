@@ -559,8 +559,8 @@ async def process_presentation_async(presentation_path: str,
                                    source_language: str,
                                    target_language: str,
                                    bilingual_translation: str,
-                                   progress_callback=None,
-                                   model:str='qwen') -> bool:
+                                   progress_callback,
+                                   model:str) -> bool:
     """
     异步处理演示文稿（基于页面的翻译机制）
     每页调用一次API，按段落匹配翻译结果
@@ -583,6 +583,20 @@ async def process_presentation_async(presentation_path: str,
     logger.info(f"开始异步处理演示文稿: {os.path.basename(presentation_path)}")
     logger.info(f"源语言: {source_language}, 目标语言: {target_language}, 双语翻译: {bilingual_translation}")
     logger.info(f"选中页面: {select_page}")
+
+
+
+    '''
+    进行布局调整
+    '''
+    logger.info("正在进行布局调整...")
+
+    # 使用COM操作进行最终的文本框调整
+    layout_result = await _adjust_ppt_layout_async(presentation_path)
+    if layout_result:
+        logger.info("布局调整完成")
+    else:
+        logger.warning("布局调整失败，但翻译已完成")
 
     '''
     添加使用pyuno接口的功能，用libreoffice渲染ppt，实现翻译转化。
@@ -609,6 +623,7 @@ async def process_presentation_async(presentation_path: str,
     
     if uno_pptx_path is None:
         logger.error("使用pyuno接口功能时出错: 转换失败")
+        uno_pptx_path = ocr_ppt_path
 
 
     try:
@@ -696,27 +711,33 @@ async def process_presentation_async(presentation_path: str,
 
         save_result = await loop.run_in_executor(None, _save_presentation)
 
-        # 如果保存成功，进行简单的布局调整
-        if save_result:
-            logger.info("正在进行布局调整...")
+        '''
+        添加使用ocr接口的功能，用ocr实现ppt图片读取，并实现翻译转化。
+        顺序如下：
+        1. 打开ppt，读取图片
+        2. 翻译
+        3. 再打开ppt，并渲染
+        '''
+        try:
+            from.image_ocr.ocr_controller import ocr_controller
+            ocr_ppt_path= ocr_controller(uno_pptx_path,
+                                        selected_pages=select_page,
+                                        output_path=None)
+        except Exception as e:
+            logger.error(f"使用ocr接口功能时出错: {str(e)}")
+            ocr_ppt_path = uno_pptx_path
+        # ocr_ppt_path = uno_pptx_path
 
-            # 使用COM操作进行最终的文本框调整
-            layout_result = await _adjust_ppt_layout_async(uno_pptx_path)
-            if layout_result:
-                logger.info("布局调整完成")
-            else:
-                logger.warning("布局调整失败，但翻译已完成")
-
-            # === 新增：将翻译后PPT重命名为原始PPT名，覆盖原文件 ===
-            try:
-                original_ppt_path = presentation_path
-                if os.path.exists(original_ppt_path):
-                    os.remove(original_ppt_path)
-                os.rename(uno_pptx_path, original_ppt_path)
-                logger.info(f"翻译后PPT已重命名为原始文件名，覆盖原文件: {original_ppt_path}")
-            except Exception as e:
-                logger.error(f"重命名翻译后PPT时出错: {e}")
-                return False
+        # === 新增：将翻译后PPT重命名为原始PPT名，覆盖原文件 ===
+        try:
+            original_ppt_path = presentation_path
+            if os.path.exists(original_ppt_path):
+                os.remove(original_ppt_path)
+            os.rename(ocr_ppt_path, original_ppt_path)
+            logger.info(f"翻译后PPT已重命名为原始文件名，覆盖原文件: {original_ppt_path}")
+        except Exception as e:
+            logger.error(f"重命名翻译后PPT时出错: {e}")
+            return False
 
         elapsed = time.time() - start_time
         logger.info(f"演示文稿处理完成:")
