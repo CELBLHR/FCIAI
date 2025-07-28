@@ -114,7 +114,7 @@ def validate_translated_json_structure(data, logger):
         logger.error(f"验证JSON结构时出错: {e}", exc_info=True)
         return False, "error", {}
 
-def write_entire_ppt_direct(input_ppt, output_ppt, translated_data, mode='paragraph'):
+def write_entire_ppt_direct(input_ppt, output_ppt, translated_data, mode='paragraph_up'):
     """
     直接将翻译后的内容写入PPT文件，支持段落层级结构
     

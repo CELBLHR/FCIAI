@@ -147,7 +147,7 @@ def extract_box_translation_from_paragraphs(box):
     
     return full_translation.replace("\r\n", "\n").replace("\r", "\n").strip()
 
-def write_textbox_with_translation_paragraphs(shape, box, mode="paragraph", logger=None):
+def write_textbox_with_translation_paragraphs(shape, box, mode="paragraph_up", logger=None):
     """
     将译文写入单个文本框，基于新的段落层级结构，实现真正的逐段翻译
     
@@ -460,7 +460,7 @@ def write_legacy_mode(text, cursor, box, mode, logger):
     else:
         logger.warning(f"旧格式模式 {mode} 功能有限")
 
-def write_from_presentation(context, slides, page_index, page_data, mode="paragraph", logger=None):
+def write_from_presentation(context, slides, page_index, page_data, mode="paragraph_up", logger=None):
     """
     处理单页的写入逻辑，支持新的段落层级结构
     
@@ -627,7 +627,7 @@ def validate_paragraph_structure(box, logger):
     return True
 
 # 兼容性函数
-def write_textbox_with_translation(shape, box, mode="append", logger=None):
+def write_textbox_with_translation(shape, box, mode="paragraph_up", logger=None):
     """
     兼容性函数，重定向到新的段落层级函数
     """

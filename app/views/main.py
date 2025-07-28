@@ -107,7 +107,7 @@ def upload_file():
         # 获取表单数据
         user_language = request.form.get('user_language', 'en')
         target_language = request.form.get('target_language', 'zh-cn')
-        bilingual_translation = request.form.get('bilingual_translation', '0')
+        bilingual_translation = request.form.get('bilingual_translation', type = str, default ='paragraph_up')
         select_page = request.form.getlist('select_page')
         model = request.form.get('model', 'qwen')
 
