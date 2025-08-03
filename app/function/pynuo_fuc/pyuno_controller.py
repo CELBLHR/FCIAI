@@ -516,7 +516,13 @@ def pyuno_controller(presentation_path: str,
         
         # 调用翻译API
         from api_translate_uno import translate_pages_by_page, validate_translation_result
-        translation_results = translate_pages_by_page(text_boxes_data, progress_callback, source_language, target_language, model)
+        translation_results = translate_pages_by_page(text_boxes_data, 
+                                                      progress_callback, 
+                                                      source_language, 
+                                                      target_language, 
+                                                      model,
+                                                      stop_words_list,
+                                                      custom_translations)
         
         logger.info(f"翻译完成，共处理 {len(translation_results)} 页")
         

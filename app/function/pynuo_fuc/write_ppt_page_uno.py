@@ -287,7 +287,7 @@ def write_paragraphs_mode(text, cursor, box, mode, logger, value = 0):
                     #     logger.warning("软回车插入失败，使用普通换行")
 
                     # 为保证格式不崩溃，不使用软回车，先使用硬回车
-                    insert_optimized_line_break(text, cursor, "hard", logger)
+                    insert_optimized_line_break(text, cursor, "soft", logger)
                     
                     # 3. 写入译文段落
                     write_paragraph_fragments(text, cursor, paragraph, "translated_text", logger)

@@ -13,6 +13,7 @@ from logger_config import get_logger
 from openai import OpenAI
 import unicodedata
 import ast
+from typing import List, Dict
 
 # 获取日志记录器
 logger = get_logger("pyuno")
@@ -20,7 +21,17 @@ logger = get_logger("pyuno")
 QWEN_API_KEY = os.getenv("QWEN_API_KEY")
 DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY")
 
-def translate(text, model):
+def translate(text: str,
+              field: str="", 
+              stop_words: List[str]=[],
+              custom_translations: Dict[str, str]={},
+              source_language: str="English", 
+              target_language: str="Chinese",
+              model:str="qwen"):
+    # 将stop_words和custom_translations转换为字符串
+    logger.info(f"translate_api_uno开始工作，执行将{source_language}翻译为{target_language}的任务")
+    stop_words_str = ", ".join(f'"{word}"' for word in stop_words)
+    custom_translations_str = ", ".join(f'"{k}": "{v}"' for k, v in custom_translations.items())
     if model == "qwen":
         logger.info("model参数设置为qwen,使用qwen2.5-72b-instruct模型")
         client = OpenAI(api_key=QWEN_API_KEY, base_url="https://dashscope.aliyuncs.com/compatible-mode/v1")
@@ -28,8 +39,8 @@ def translate(text, model):
         response = client.chat.completions.create(
             model = used_model,
             messages=[
-                {"role": "system", "content": f"""您是翻译领域的专家。接下来，您将获得一系列文本（包括短语、句子和单词），他们是隶属于同一个PPT的同一页面下的文本框段落的所有文本。
-                                                  请将每一段文本翻译成专业的中文。
+                {"role": "system", "content": f"""您是翻译{field}领域文本的专家。接下来，您将获得一系列{source_language}文本（包括短语、句子和单词），他们是隶属于同一个PPT的同一页面下的文本框段落的所有文本。
+                                                  请将每一段文本翻译成专业的{target_language}中文。
                                                   1. 上传的将是一个格式化文本，结构如下：
                                                     第1页内容：
 
@@ -80,6 +91,12 @@ def translate(text, model):
                                                       - 按文本框段落顺序在 **同一个 JSON 数组** 内输出
                                                       - **不要输出额外信息、注释或多余文本**。
                                                       - box_index 和 paragraph_index 必须与输入中的【文本框X-段落Y】序号完全对应
+                                                  2. **自定义翻译**：
+                                                     如果遇到以下词汇，在保持语义通顺的前提下使用提供的翻译做参考：
+                                                      {custom_translations_str}
+                                                  3. **停翻词处理**：
+                                                     以下或单词短语**保留原样，不翻译**：
+                                                      {stop_words_str}
                                                   现在，请按照上述规则翻译文本"""},
                 {"role": "user", "content": text}
             ],
@@ -470,7 +487,7 @@ def format_page_text_for_translation(text_boxes_data, page_index):
     logger.debug(f"PPT第 {page_index + 1} 页（原始索引{page_index}）格式化了 {len(page_box_paragraphs)} 个文本框段落")
     return formatted_text.strip()
 
-def translate_pages_by_page(text_boxes_data, progress_callback, source_language, target_language, model):
+def translate_pages_by_page(text_boxes_data, progress_callback, source_language, target_language, model,stop_words_list,custom_translations):
     """
     按页翻译文本内容，每页调用一次翻译API（支持段落层级）
     ✅ 修复版本：正确处理页面索引和进度回调
@@ -547,7 +564,12 @@ def translate_pages_by_page(text_boxes_data, progress_callback, source_language,
         try:
             # 调用翻译API
             logger.info(f"正在调用翻译API翻译PPT第 {page_index + 1} 页...")
-            translated_result = translate(page_content, model)          
+            translated_result = translate(page_content, 
+                                          model=model,
+                                          stop_words=stop_words_list,
+                                          custom_translations=custom_translations,
+                                          source_language=source_language,
+                                          target_language=target_language)          
             logger.info(f"PPT第 {page_index + 1} 页翻译完成")
             
             logger.info("翻译结果:")
