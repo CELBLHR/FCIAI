@@ -1128,8 +1128,8 @@ function loadHistory(force = false) {
             historyContainer.innerHTML = records.map(record => `
                 <div class="history-item">
                     <div class="file-info">
-                        <div class="file-name" title="${record.filename.replace(/\.[^/.]+$/, '')}_translated${record.filename.match(/\.[^/.]+$/)?.[0] || ''}">
-                            ${record.filename.replace(/\.[^/.]+$/, '')}_translated${record.filename.match(/\.[^/.]+$/)?.[0] || ''}
+                        <div class="file-name" title="translated_${record.filename}">
+                            translated_${record.filename}
                         </div>
                         <div class="file-meta">
                             <span class="upload-time">${formatDateTime(record.upload_time)}</span>

@@ -449,10 +449,8 @@ def download_file(record_id):
         print(f"Downloading file: {file_path}")
         print(f"Original filename: {record.filename}")
         
-        # 生成新的文件名：去掉扩展名，加上_translated，再加回扩展名
-        name_without_ext = os.path.splitext(record.filename)[0]
-        extension = os.path.splitext(record.filename)[1]
-        translated_filename = f"{name_without_ext}_translated{extension}"
+        # 生成新的文件名：在前面加上translated_前缀
+        translated_filename = f"translated_{record.filename}"
         
         file_path = os.path.abspath(file_path)
         return send_file(file_path, as_attachment=True, download_name=translated_filename)
