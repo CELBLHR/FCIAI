@@ -4,15 +4,46 @@
 
 {% block styles %}
 <style>
-/* 统计信息区域 */
-.stats-section {
-    background: rgba(0, 0, 0, 0.2);
-    border-radius: 10px;
-    padding: 1.5rem;
-    margin-bottom: 2rem;
+/* 重写容器样式 */
+.container {
+    margin-left: 17vw !important;
+    width: 83vw !important;
+    background-color: #f8f9fa;
+    color: rgb(110,111,114);
+    line-height: 1.6;
+    padding: 1.4vw;
+    min-height: 100vh;
+    box-sizing: border-box;
+}
+
+/* 页面标题 */
+h1 {
+    font-size: 2rem;
+    font-weight: 600;
+    color: rgb(0,148,217);
+    margin-bottom: 2.1vw;
     display: flex;
     align-items: center;
-    gap: 2rem;
+    gap: 0.7vw;
+}
+
+h2 {
+    font-size: 1.4rem;
+    font-weight: 600;
+    color: rgb(0,148,217);
+    margin-bottom: 1.4vw;
+}
+
+/* 统计信息区域 */
+.stats-section {
+    background: white;
+    border-radius: 0.8vw;
+    padding: 1.8vw;
+    margin-bottom: 2.1vw;
+    display: flex;
+    align-items: center;
+    gap: 2.8vw;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.06);
 }
 
 .stats-item {
@@ -22,103 +53,144 @@
 }
 
 .stats-value {
-    font-size: 2rem;
+    font-size: 2.2rem;
     font-weight: bold;
-    color: var(--primary-color);
+    color: rgb(0,148,217);
 }
 
 .stats-label {
-    color: var(--text-color);
-    font-size: 0.9rem;
+    color: rgb(110,111,114);
+    font-size: 1rem;
+    margin-top: 0.4vw;
 }
 
 /* 添加新翻译区域 */
 .add-section {
-    margin-bottom: 2rem;
+    margin-bottom: 2.1vw;
+    background: white;
+    border-radius: 0.8vw;
+    padding: 1.8vw;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.06);
 }
 
 .input-group {
     display: flex;
-    gap: 1rem;
-    margin-bottom: 1rem;
+    gap: 1.2vw;
+    margin-bottom: 1.2vw;
 }
 
 .input-group input {
     flex: 1;
-    padding: 0.8rem;
-    border: 1px solid rgba(0, 168, 255, 0.3);
-    border-radius: 5px;
-    background: rgba(0, 0, 0, 0.2);
-    color: var(--text-color);
+    padding: 0.8vw 1.2vw;
+    border: 1px solid #dee2e6;
+    border-radius: 0.5vw;
+    background: white;
+    color: rgb(110,111,114);
+    font-size: 1rem;
+    transition: all 0.2s ease;
+}
+
+.input-group input:focus {
+    outline: none;
+    border-color: rgb(0,148,217);
+    box-shadow: 0 0 0 3px rgba(0,148,217,0.1);
+}
+
+.input-group input::placeholder {
+    color: rgba(110,111,114,0.6);
 }
 
 .input-group button {
-    padding: 0.8rem 2rem;
-    background-color: var(--primary-color);
+    padding: 0.8vw 2.1vw;
+    background-color: rgb(0,148,217);
     color: white;
     border: none;
-    border-radius: 5px;
+    border-radius: 0.5vw;
     cursor: pointer;
-    transition: background-color 0.3s;
+    transition: all 0.2s ease;
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: 0.5vw;
+    font-size: 1rem;
+    font-weight: 500;
 }
 
 .input-group button:hover {
-    background-color: var(--secondary-color);
+    background-color: rgb(0,130,190);
+    transform: translateY(-1px);
 }
 
 /* 停翻词区域 */
 .stop-words-section {
-    margin-bottom: 2rem;
+    margin-bottom: 2.1vw;
+    background: white;
+    border-radius: 0.8vw;
+    padding: 1.8vw;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.06);
 }
 
 .stop-words-input-group {
     display: flex;
-    gap: 1rem;
-    margin-bottom: 1rem;
+    gap: 1.2vw;
+    margin-bottom: 1.2vw;
 }
 
 .stop-words-input-group input {
     flex: 1;
-    padding: 0.8rem;
-    border: 1px solid rgba(0, 168, 255, 0.3);
-    border-radius: 5px;
-    background: rgba(0, 0, 0, 0.2);
-    color: var(--text-color);
+    padding: 0.8vw 1.2vw;
+    border: 1px solid #dee2e6;
+    border-radius: 0.5vw;
+    background: white;
+    color: rgb(110,111,114);
+    font-size: 1rem;
+    transition: all 0.2s ease;
+}
+
+.stop-words-input-group input:focus {
+    outline: none;
+    border-color: rgb(0,148,217);
+    box-shadow: 0 0 0 3px rgba(0,148,217,0.1);
+}
+
+.stop-words-input-group input::placeholder {
+    color: rgba(110,111,114,0.6);
 }
 
 .stop-words-input-group button {
-    padding: 0.8rem 2rem;
-    background-color: var(--primary-color);
+    padding: 0.8vw 2.1vw;
+    background-color: rgb(0,148,217);
     color: white;
     border: none;
-    border-radius: 5px;
+    border-radius: 0.5vw;
     cursor: pointer;
-    transition: background-color 0.3s;
+    transition: all 0.2s ease;
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: 0.5vw;
+    font-size: 1rem;
+    font-weight: 500;
 }
 
 .stop-words-input-group button:hover {
-    background-color: var(--secondary-color);
+    background-color: rgb(0,130,190);
+    transform: translateY(-1px);
 }
 
 .stop-words-list {
-    background: rgba(0, 0, 0, 0.2);
-    border-radius: 10px;
-    padding: 1rem;
-    margin-top: 1rem;
+    background: #f8f9fa;
+    border-radius: 0.6vw;
+    padding: 1.2vw;
+    margin-top: 1.2vw;
+    border: 1px solid #e9ecef;
 }
 
 .stop-word-item {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding: 0.5rem;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    padding: 0.8vw;
+    border-bottom: 1px solid rgba(0,0,0,0.1);
+    color: rgb(110,111,114);
 }
 
 .stop-word-item:last-child {
@@ -127,120 +199,155 @@
 
 /* 搜索区域 */
 .search-section {
-    margin-bottom: 2rem;
+    margin-bottom: 2.1vw;
+    background: white;
+    border-radius: 0.8vw;
+    padding: 1.8vw;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.06);
 }
 
 .search-container {
     display: flex;
-    gap: 1rem;
+    gap: 1.2vw;
 }
 
 .search-container input {
     flex: 1;
-    padding: 0.8rem;
-    border: 1px solid rgba(0, 168, 255, 0.3);
-    border-radius: 5px;
-    background: rgba(0, 0, 0, 0.2);
-    color: var(--text-color);
+    padding: 0.8vw 1.2vw;
+    border: 1px solid #dee2e6;
+    border-radius: 0.5vw;
+    background: white;
+    color: rgb(110,111,114);
+    font-size: 1rem;
+    transition: all 0.2s ease;
+}
+
+.search-container input:focus {
+    outline: none;
+    border-color: rgb(0,148,217);
+    box-shadow: 0 0 0 3px rgba(0,148,217,0.1);
+}
+
+.search-container input::placeholder {
+    color: rgba(110,111,114,0.6);
 }
 
 .search-btn {
-    padding: 0.8rem 2rem;
-    background-color: var(--primary-color);
+    padding: 0.8vw 2.1vw;
+    background-color: rgb(0,148,217);
     color: white;
     border: none;
-    border-radius: 5px;
+    border-radius: 0.5vw;
     cursor: pointer;
     display: flex;
     align-items: center;
-    gap: 0.5rem;
-    transition: background-color 0.3s;
+    gap: 0.5vw;
+    transition: all 0.2s ease;
+    font-size: 1rem;
+    font-weight: 500;
 }
 
 .search-btn:hover {
-    background-color: var(--secondary-color);
+    background-color: rgb(0,130,190);
+    transform: translateY(-1px);
 }
 
 /* 数据表格区域 */
 .table-section {
-    background: rgba(0, 0, 0, 0.2);
-    border-radius: 10px;
-    padding: 1rem;
-    margin-bottom: 1rem;
+    background: white;
+    border-radius: 0.8vw;
+    padding: 1.8vw;
+    margin-bottom: 1.4vw;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.06);
 }
 
 table {
     width: 100%;
     border-collapse: collapse;
+    font-size: 1rem;
 }
 
 th, td {
-    padding: 1rem;
+    padding: 1.2vw;
     text-align: left;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    border-bottom: 1px solid #f1f3f4;
 }
 
 th {
-    font-weight: bold;
-    color: var(--primary-color);
+    font-weight: 600;
+    color: rgb(0,148,217);
+    background: #fafbfc;
+    font-size: 1rem;
+}
+
+td {
+    color: rgb(110,111,114);
 }
 
 tr:hover {
-    background: rgba(0, 168, 255, 0.1);
+    background: rgba(0,148,217,0.05);
 }
 
 /* 操作按钮 */
 .action-btn {
-    padding: 0.5rem;
+    padding: 0.4vw 0.8vw;
     background: none;
     border: none;
-    color: var(--text-color);
+    color: rgb(110,111,114);
     cursor: pointer;
-    transition: color 0.3s;
+    transition: all 0.2s ease;
+    border-radius: 0.3vw;
+    margin-right: 0.4vw;
+    font-size: 1rem;
 }
 
 .action-btn:hover {
-    color: var(--primary-color);
+    color: rgb(0,148,217);
+    background: rgba(0,148,217,0.1);
 }
 
 /* 分页 */
 .pagination {
     display: flex;
     justify-content: center;
-    gap: 0.5rem;
-    margin-top: 1rem;
+    gap: 0.5vw;
+    margin-top: 1.4vw;
 }
 
 .pagination button {
-    padding: 0.5rem 1rem;
-    background: rgba(0, 0, 0, 0.2);
-    border: 1px solid rgba(0, 168, 255, 0.3);
-    border-radius: 5px;
-    color: var(--text-color);
+    padding: 0.6vw 1.2vw;
+    background: white;
+    border: 1px solid #dee2e6;
+    border-radius: 0.4vw;
+    color: rgb(110,111,114);
     cursor: pointer;
-    transition: all 0.3s;
+    transition: all 0.2s ease;
+    font-size: 1rem;
 }
 
 .pagination button:hover {
-    background: var(--hover-color);
+    background: rgba(0,148,217,0.1);
+    border-color: rgb(0,148,217);
+    color: rgb(0,148,217);
 }
 
 .pagination button.active {
-    background: var(--primary-color);
+    background: rgb(0,148,217);
     color: white;
+    border-color: rgb(0,148,217);
 }
 
 /* 空状态 */
 .empty-state {
     text-align: center;
-    padding: 2rem;
-    color: var(--text-color);
+    padding: 2.8vw;
+    color: rgb(110,111,114);
 }
 
 .empty-state i {
     font-size: 3rem;
-    color: var(--primary-color);
-    margin-bottom: 1rem;
+    color: rgba(0,148,217,0.5);
+    margin-bottom: 1.4vw;
 }
 </style>
 {% endblock %}
@@ -260,8 +367,6 @@ tr:hover {
     </div>
 </section>
 
-
-
 <!-- 添加停翻词 -->
 <section class="stop-words-section">
     <h2>停翻词管理</h2>
@@ -276,6 +381,7 @@ tr:hover {
         <!-- 停翻词列表将通过JavaScript动态插入 -->
     </div>
 </section>
+
 <!-- 添加新翻译 -->
 <section class="add-section">
     <h2>添加新翻译</h2>
@@ -288,6 +394,7 @@ tr:hover {
         </button>
     </div>
 </section>
+
 <!-- 搜索栏 -->
 <section class="search-section">
     <div class="search-container">
@@ -596,4 +703,4 @@ loadTranslations();
 loadStopWords();
 updateStats();
 </script>
-{% endblock %} 
+{% endblock %}

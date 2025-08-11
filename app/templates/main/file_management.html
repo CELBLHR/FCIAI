@@ -4,134 +4,231 @@
 
 {% block styles %}
 <style>
-    .file-management-container {
-        padding: 20px;
-    }
-    
-    .section-header {
-        margin-bottom: 20px;
-        border-bottom: 1px solid #eee;
-        padding-bottom: 10px;
-    }
-    
-    .files-table {
-        width: 100%;
-        border-collapse: collapse;
-        margin-top: 20px;
-    }
-    
-    .files-table th, 
-    .files-table td {
-        padding: 12px 15px;
-        text-align: left;
-        border-bottom: 1px solid #eee;
-    }
-    
-    .files-table th {
-        background-color: #f9f9f9;
-        font-weight: 600;
-        color: #555;
-    }
-    
-    .files-table tr:hover {
-        background-color: #f5f5f5;
-    }
-    
-    .action-btn {
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        padding: 6px 12px;
-        border-radius: 4px;
-        text-decoration: none;
-        font-size: 14px;
-        transition: all 0.2s;
-        margin-right: 5px;
-    }
-    
-    .download-btn {
-        background-color: #e3f2fd;
-        color: #0277bd;
-        border: 1px solid #0277bd;
-    }
-    
-    .download-btn:hover {
-        background-color: #0277bd;
-        color: white;
-    }
-    
-    .delete-btn {
-        background-color: #ffebee;
-        color: #d32f2f;
-        border: 1px solid #d32f2f;
-    }
-    
-    .delete-btn:hover {
-        background-color: #d32f2f;
-        color: white;
-    }
-    
-    .filters {
-        display: flex;
-        gap: 15px;
-        margin-bottom: 20px;
-    }
-    
-    .filter-item {
-        display: flex;
-        align-items: center;
-    }
-    
-    .filter-item label {
-        margin-right: 8px;
-    }
-    
-    .filter-item select,
-    .filter-item input {
-        padding: 8px;
-        border: 1px solid #ddd;
-        border-radius: 4px;
-    }
-    
-    .pagination {
-        display: flex;
-        justify-content: center;
-        margin-top: 20px;
-        gap: 5px;
-    }
-    
-    .pagination-btn {
-        padding: 8px 12px;
-        border: 1px solid #ddd;
-        border-radius: 4px;
-        background-color: #f9f9f9;
-        cursor: pointer;
-    }
-    
-    .pagination-btn.active {
-        background-color: #0277bd;
-        color: white;
-        border-color: #0277bd;
-    }
-    
-    .pagination-btn:hover:not(.active) {
-        background-color: #e9e9e9;
-    }
-    
-    .file-size {
-        white-space: nowrap;
-    }
-    
-    .empty-state {
-        text-align: center;
-        padding: 40px;
-        color: #757575;
-    }
-    
-    .loading-indicator {
-        text-align: center;
-        padding: 20px;
-    }
+/* 重写容器样式 */
+.container {
+    margin-left: 17vw !important;
+    width: 83vw !important;
+    background-color: #f8f9fa;
+    color: rgb(110,111,114);
+    line-height: 1.6;
+    padding: 1.4vw;
+    min-height: 100vh;
+    box-sizing: border-box;
+}
+
+.file-management-container {
+    background: white;
+    border-radius: 0.8vw;
+    padding: 2.1vw;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+}
+
+.section-header {
+    margin-bottom: 2.1vw;
+    border-bottom: 1px solid #e9ecef;
+    padding-bottom: 1.4vw;
+}
+
+.section-header h1 {
+    font-size: 2rem;
+    font-weight: 600;
+    color: rgb(0,148,217);
+    margin: 0;
+    display: flex;
+    align-items: center;
+    gap: 0.7vw;
+}
+
+.section-header p {
+    color: rgb(110,111,114);
+    margin: 0.7vw 0 0 0;
+    font-size: 1rem;
+}
+
+.files-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 1.4vw;
+    font-size: 1rem;
+}
+
+.files-table th, 
+.files-table td {
+    padding: 1.2vw 1vw;
+    text-align: left;
+    border-bottom: 1px solid #f1f3f4;
+}
+
+.files-table th {
+    background-color: #fafbfc;
+    font-weight: 600;
+    color: rgb(0,148,217);
+    font-size: 1rem;
+}
+
+.files-table td {
+    color: rgb(110,111,114);
+}
+
+.files-table tr:hover {
+    background-color: rgba(0,148,217,0.05);
+}
+
+.action-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0.6vw 1.2vw;
+    border-radius: 0.4vw;
+    text-decoration: none;
+    font-size: 0.9rem;
+    font-weight: 500;
+    transition: all 0.2s ease;
+    margin-right: 0.5vw;
+    border: none;
+    cursor: pointer;
+}
+
+.download-btn {
+    background-color: rgba(0,148,217,0.1);
+    color: rgb(0,148,217);
+    border: 1px solid rgb(0,148,217);
+}
+
+.download-btn:hover {
+    background-color: rgb(0,148,217);
+    color: white;
+    text-decoration: none;
+}
+
+.delete-btn {
+    background-color: rgba(220,53,69,0.1);
+    color: #dc3545;
+    border: 1px solid #dc3545;
+}
+
+.delete-btn:hover {
+    background-color: #dc3545;
+    color: white;
+}
+
+.filters {
+    display: flex;
+    gap: 1.4vw;
+    margin-bottom: 1.4vw;
+    padding: 1.4vw;
+    background: #f8f9fa;
+    border-radius: 0.6vw;
+    border: 1px solid #e9ecef;
+}
+
+.filter-item {
+    display: flex;
+    align-items: center;
+}
+
+.filter-item label {
+    margin-right: 0.6vw;
+    color: rgb(110,111,114);
+    font-weight: 500;
+    font-size: 0.9rem;
+}
+
+.filter-item select,
+.filter-item input {
+    padding: 0.6vw 0.8vw;
+    border: 1px solid #dee2e6;
+    border-radius: 0.4vw;
+    background: white;
+    color: rgb(110,111,114);
+    font-size: 0.9rem;
+    transition: all 0.2s ease;
+}
+
+.filter-item select:focus,
+.filter-item input:focus {
+    outline: none;
+    border-color: rgb(0,148,217);
+    box-shadow: 0 0 0 3px rgba(0,148,217,0.1);
+}
+
+.filter-item button {
+    padding: 0.4vw;
+    background: none;
+    border: none;
+    color: rgb(110,111,114);
+    cursor: pointer;
+    border-radius: 0.3vw;
+    transition: all 0.2s ease;
+}
+
+.filter-item button:hover {
+    background: rgba(220,53,69,0.1);
+    color: #dc3545;
+}
+
+.pagination {
+    display: flex;
+    justify-content: center;
+    margin-top: 1.4vw;
+    gap: 0.4vw;
+}
+
+.pagination-btn {
+    padding: 0.6vw 1.2vw;
+    border: 1px solid #dee2e6;
+    border-radius: 0.4vw;
+    background-color: white;
+    color: rgb(110,111,114);
+    cursor: pointer;
+    transition: all 0.2s ease;
+    font-size: 0.9rem;
+}
+
+.pagination-btn.active {
+    background-color: rgb(0,148,217);
+    color: white;
+    border-color: rgb(0,148,217);
+}
+
+.pagination-btn:hover:not(.active) {
+    background-color: rgba(0,148,217,0.1);
+    border-color: rgb(0,148,217);
+    color: rgb(0,148,217);
+}
+
+.file-size {
+    white-space: nowrap;
+}
+
+.empty-state {
+    text-align: center;
+    padding: 2.8vw;
+    color: rgb(110,111,114);
+}
+
+.empty-state i {
+    font-size: 3rem;
+    color: rgba(0,148,217,0.5);
+    margin-bottom: 1.4vw;
+}
+
+.loading-indicator {
+    text-align: center;
+    padding: 1.4vw;
+    color: rgb(110,111,114);
+    font-size: 1rem;
+}
+
+.loading-indicator i {
+    margin-right: 0.5vw;
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
 </style>
 {% endblock %}
 
@@ -164,7 +261,7 @@
     </div>
     
     <div id="loadingIndicator" class="loading-indicator">
-        <i class="bi bi-arrow-repeat spinning"></i> 加载中...
+        <i class="bi bi-arrow-repeat"></i> 加载中...
     </div>
     
     <div id="filesTableContainer">
@@ -184,7 +281,7 @@
         </table>
         
         <div id="emptyState" class="empty-state" style="display: none;">
-            <i class="bi bi-inbox" style="font-size: 48px;"></i>
+            <i class="bi bi-inbox"></i>
             <p>没有找到符合条件的文件</p>
         </div>
         
@@ -526,4 +623,4 @@ function debounce(func, wait) {
     };
 }
 </script>
-{% endblock %} 
+{% endblock %}

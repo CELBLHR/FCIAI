@@ -10,13 +10,24 @@ import tempfile
 from typing import List, Dict
 from datetime import datetime
 import sys, os
+import shutil
+
 sys.path.insert(0, os.path.dirname(__file__))
 from logger_config import setup_default_logging, get_logger, log_function_call, log_execution_time
 from ppt_data_utils import extract_texts_for_translation, call_translation_api, map_translation_results_back, save_translated_ppt_data
 
+
 # 直接导入处理函数
 from load_ppt_functions import load_entire_ppt_direct
 from edit_ppt_functions import write_entire_ppt_direct
+
+# 直接导入处理函数(pptx版本) - 新增
+try:
+    from edit_ppt_functions_pptx import edit_ppt_with_pptx
+except ImportError as e:
+    logger = get_logger("pyuno.main")
+    logger.error(f"导入PPTX处理模块失败: {str(e)}")
+    raise ImportError("请确保 edit_ppt_functions_pptx.py 文件存在并可导入")
 
 import subprocess  # 仍需要用于启动soffice服务
 import psutil
@@ -383,6 +394,30 @@ def _validate_and_normalize_page_indices(page_indices):
         logger.warning("页面索引验证失败，将处理所有页面")
         return None
 
+def backup_original_pptx(original_path, temp_dir):
+    """
+    备份原始PPTX文件 - 新增功能
+    Args:
+        original_path: 原始PPTX文件路径
+        temp_dir: 临时目录路径
+    Returns:
+        backup_path: 备份文件路径
+    """
+    logger = get_logger("pyuno.main")
+    try:
+        filename = os.path.basename(original_path)
+        name, ext = os.path.splitext(filename)
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        backup_filename = f"backup_{timestamp}_{name}{ext}"
+        backup_path = os.path.join(temp_dir, backup_filename)
+        
+        shutil.copy2(original_path, backup_path)
+        logger.info(f"原始PPTX文件已备份到: {backup_path}")
+        return backup_path
+    except Exception as e:
+        logger.error(f"备份PPTX文件失败: {str(e)}")
+        raise
+
 # 设置日志记录器
 logger = setup_default_logging()
 
@@ -425,11 +460,27 @@ def pyuno_controller(presentation_path: str,
     file_size = os.path.getsize(presentation_path)
     logger.info(f"PPT文件大小: {file_size / (1024*1024):.2f} MB")
     
-    # ===== 新增步骤：使用PyUNO接口将PPTX转换为ODP =====
+    # ===== 第零步：创造两个文件分支，一个是ODP，一个是PPTX（新增备份功能） =====
     logger.info("=" * 60)
-    logger.info("第0步：使用PyUNO接口将PPTX转换为ODP格式")
+    logger.info("第0步：创造两个文件分支，一个是ODP，一个是PPTX")
     logger.info("=" * 60)
     
+    # 创建临时目录
+    temp_dir = tempfile.mkdtemp(prefix="ppt_translate_")
+    logger.info(f"创建临时目录: {temp_dir}")
+    
+    try:
+        # 新增：备份原始PPTX文件
+        backup_pptx_path = backup_original_pptx(presentation_path, temp_dir)
+        
+    except Exception as e:
+        logger.error(f"备份原始PPTX文件失败: {e}", exc_info=True)
+        # 清理临时目录
+        if os.path.exists(temp_dir):
+            shutil.rmtree(temp_dir)
+        return None
+    
+    # 将pptx转化为odp，并保存为odp_working_path
     try:
         # 生成ODP文件路径
         input_dir = os.path.dirname(presentation_path)
@@ -443,6 +494,9 @@ def pyuno_controller(presentation_path: str,
         
         if not converted_odp_path:
             logger.error("PPTX转ODP失败，无法继续处理")
+            # 清理临时目录
+            if os.path.exists(temp_dir):
+                shutil.rmtree(temp_dir)
             return None
         
         # 重命名为工作文件
@@ -454,6 +508,9 @@ def pyuno_controller(presentation_path: str,
         
     except Exception as e:
         logger.error(f"PPTX转ODP过程失败: {e}", exc_info=True)
+        # 清理临时目录
+        if os.path.exists(temp_dir):
+            shutil.rmtree(temp_dir)
         return None
     
     # ===== 第一步：从ODP加载内容 =====
@@ -470,9 +527,11 @@ def pyuno_controller(presentation_path: str,
         
         if not ppt_data:
             logger.error("无法从ODP加载PPT内容")
-            # 清理临时ODP文件
+            # 清理临时ODP文件和临时目录
             if os.path.exists(odp_working_path):
                 os.remove(odp_working_path)
+            if os.path.exists(temp_dir):
+                shutil.rmtree(temp_dir)
             return None
         
         # 记录加载信息
@@ -488,9 +547,11 @@ def pyuno_controller(presentation_path: str,
         
     except Exception as e:
         logger.error(f"加载ODP内容失败: {e}", exc_info=True)
-        # 清理临时ODP文件
+        # 清理临时ODP文件和临时目录
         if os.path.exists(odp_working_path):
             os.remove(odp_working_path)
+        if os.path.exists(temp_dir):
+            shutil.rmtree(temp_dir)
         return None
     
     # ===== 第二步：翻译PPT内容 =====
@@ -506,11 +567,6 @@ def pyuno_controller(presentation_path: str,
             logger.warning("没有找到需要翻译的文本框段落")
             # 即使没有翻译内容，也要返回原始文件
             logger.info("没有翻译内容，直接转换回PPTX")
-            # 这里应该将ODP转回PPTX并返回
-            # final_pptx_path = convert_odp_to_pptx(odp_working_path)
-            # if os.path.exists(odp_working_path):
-            #     os.remove(odp_working_path)
-            # return final_pptx_path
         
         logger.info(f"提取到 {len(text_boxes_data)} 个需要翻译的文本框段落")
         
@@ -534,9 +590,11 @@ def pyuno_controller(presentation_path: str,
         
     except Exception as e:
         logger.error(f"翻译过程失败: {e}", exc_info=True)
-        # 清理临时ODP文件
+        # 清理临时ODP文件和临时目录
         if os.path.exists(odp_working_path):
             os.remove(odp_working_path)
+        if os.path.exists(temp_dir):
+            shutil.rmtree(temp_dir)
         return None
     
     # ===== 第三步：映射翻译结果 =====
@@ -553,78 +611,36 @@ def pyuno_controller(presentation_path: str,
         logger.info("映射失败，使用原始PPT数据")
         translated_ppt_data = ppt_data
     
-    # ===== 第四步：将翻译结果写入ODP =====
+    # ===== 第四步：将翻译结果写入PPTX（修改：使用python-pptx） =====
     logger.info("=" * 60)
-    logger.info("第4步：将翻译结果写入ODP文件")
+    logger.info("第4步：将翻译结果写入PPTX（使用python-pptx）")
     logger.info("=" * 60)
-    
+
     try:
-        # 生成翻译后的ODP文件路径
-        translated_odp_filename = f"{input_filename}_translated_{timestamp}.odp"
-        translated_odp_path = os.path.join(input_dir, translated_odp_filename)
+        # 构建最终输出路径
+        original_dir = os.path.dirname(presentation_path)
+        original_name = os.path.splitext(os.path.basename(presentation_path))[0]
+        output_path = os.path.join(original_dir, f"{original_name}_translated.pptx")
         
-        # 直接调用写入函数，不使用子进程
-        write_success = write_entire_ppt_direct(
-            input_ppt=odp_working_path,
-            output_ppt=translated_odp_path,
-            translated_data=translated_ppt_data,
-            mode=bilingual_translation
+        # 调用新的PPTX编辑模块
+        result_path = edit_ppt_with_pptx(
+            backup_pptx_path, 
+            translated_ppt_data, 
+            bilingual_translation,
+            validated_page_indices,  # 传入0-based索引
+            output_path,
+            progress_callback
         )
         
-        if not write_success:
-            logger.error("写入翻译内容到ODP失败")
-            # 清理临时文件
-            if os.path.exists(odp_working_path):
-                os.remove(odp_working_path)
-            return None
-        
-        logger.info(f"✅ 翻译内容写入ODP成功: {translated_odp_path}")
+        logger.info(f"✅ 翻译内容写入PPTX成功: {result_path}")
         
     except Exception as e:
-        logger.error(f"写入翻译内容失败: {e}", exc_info=True)
+        logger.error(f"写入翻译结果到PPTX失败: {e}", exc_info=True)
         # 清理临时文件
         if os.path.exists(odp_working_path):
             os.remove(odp_working_path)
-        return None
-    
-    # ===== 第五步：使用PyUNO接口将ODP转换回PPTX =====
-    logger.info("=" * 60)
-    logger.info("第5步：使用PyUNO接口将翻译后的ODP转换为PPTX")
-    logger.info("=" * 60)
-    
-    try:
-        # 转换ODP到PPTX
-        final_pptx_path = convert_odp_to_pptx_pyuno(translated_odp_path)
-        
-        if not final_pptx_path:
-            logger.error("ODP转PPTX失败")
-            # 清理临时文件
-            if os.path.exists(odp_working_path):
-                os.remove(odp_working_path)
-            if os.path.exists(translated_odp_path):
-                os.remove(translated_odp_path)
-            return None
-        
-        logger.info(f"✅ ODP转PPTX成功: {final_pptx_path}")
-        
-        # 清理临时ODP文件
-        try:
-            if os.path.exists(odp_working_path):
-                os.remove(odp_working_path)
-                logger.info(f"已删除临时工作文件: {odp_working_path}")
-            if os.path.exists(translated_odp_path):
-                os.remove(translated_odp_path)
-                logger.info(f"已删除临时翻译文件: {translated_odp_path}")
-        except Exception as e:
-            logger.warning(f"清理临时文件失败: {e}")
-        
-    except Exception as e:
-        logger.error(f"ODP转PPTX失败: {e}", exc_info=True)
-        # 清理临时文件
-        if os.path.exists(odp_working_path):
-            os.remove(odp_working_path)
-        if os.path.exists(translated_odp_path):
-            os.remove(translated_odp_path)
+        if os.path.exists(temp_dir):
+            shutil.rmtree(temp_dir)
         return None
     
     # ===== 处理完成统计 =====
@@ -650,15 +666,27 @@ def pyuno_controller(presentation_path: str,
         logger.info(f"  - 总文本框数: {total_boxes}")
         logger.info(f"  - 总段落数: {total_paragraphs}")
         logger.info(f"  - 总文本片段数: {total_fragments}")
-        logger.info(f"  - 有内容的文本框段落数: {len(text_boxes_data)}")
+        logger.info(f"  - 有内容的文本框段落数: {len(text_boxes_data) if 'text_boxes_data' in locals() else 0}")
         logger.info(f"  - 成功翻译页数: {successful_translations}")
         logger.info(f"  - 翻译文本框段落数: {total_translated_box_paragraphs}")
-        logger.info(f"  - 最终PPTX文件: {final_pptx_path}")
-        logger.info(f"  - PPTX文件大小: {os.path.getsize(final_pptx_path) / (1024*1024):.2f} MB")
+        logger.info(f"  - 最终PPTX文件: {result_path}")
+        logger.info(f"  - PPTX文件大小: {os.path.getsize(result_path) / (1024*1024):.2f} MB")
         
         if select_page:
             logger.info(f"  - 请求处理页面: {select_page}")
-            logger.info(f"  - 实际处理页面数: {len(actual_pages)}")
+            if 'actual_pages' in locals():
+                logger.info(f"  - 实际处理页面数: {len(actual_pages)}")
+        
+        # 清理临时文件
+        try:
+            if os.path.exists(odp_working_path):
+                os.remove(odp_working_path)
+                logger.info(f"已删除临时ODP文件: {odp_working_path}")
+            if os.path.exists(temp_dir):
+                shutil.rmtree(temp_dir)
+                logger.info(f"已清理临时目录: {temp_dir}")
+        except Exception as e:
+            logger.warning(f"清理临时文件失败: {e}")
         
         log_execution_time(logger, "pyuno_controller", start_time)
         
@@ -666,11 +694,19 @@ def pyuno_controller(presentation_path: str,
         logger.info("🎉 pyuno_controller 处理完成！")
         logger.info("=" * 60)
         
-        return final_pptx_path
+        return result_path
         
     except Exception as e:
         logger.error(f"统计信息生成失败: {e}", exc_info=True)
-        return final_pptx_path  # 即使统计失败，也返回结果文件
+        # 清理临时文件
+        try:
+            if os.path.exists(odp_working_path):
+                os.remove(odp_working_path)
+            if os.path.exists(temp_dir):
+                shutil.rmtree(temp_dir)
+        except:
+            pass
+        return result_path if 'result_path' in locals() else None
 
 def test_pyuno_format_conversion():
     """测试PyUNO格式转换功能"""
@@ -743,6 +779,7 @@ if __name__ == "__main__":
                 source_language='en',
                 target_language='zh',
                 bilingual_translation='paragraph',
+                progress_callback=None,
                 model='qwen'
             )
             if result:

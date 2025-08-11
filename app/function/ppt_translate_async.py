@@ -623,7 +623,7 @@ async def process_presentation_async(presentation_path: str,
     
     if uno_pptx_path is None:
         logger.error("使用pyuno接口功能时出错: 转换失败")
-        uno_pptx_path = ocr_ppt_path
+        uno_pptx_path = presentation_path
 
 
     try:
