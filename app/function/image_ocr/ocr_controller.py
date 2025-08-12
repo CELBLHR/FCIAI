@@ -18,6 +18,9 @@ from logger_config_ocr import get_logger
 # 导入OCR API处理器
 from ocr_api import OCRProcessor
 
+# 导入OCR QWEN API处理程序
+from qwen_ocr_api import process_folder_with_mapping
+
 # 导入翻译模块
 from translator import TranslationManager
 
@@ -617,16 +620,30 @@ def ocr_controller(presentation_path: str,
             return presentation_path
         logger.info(f"✅ 图片提取完成，临时目录: {temp_dir}")
 
-        # 2. 调用OCR API进行文本识别
+        '''
+        旧方法：调用min什么什么模型进行ocr识别，效果不够好，改用qwen-vl-ocr模型
+        '''
+        # logger.info("\n" + "=" * 50)
+        # logger.info("🤖 第二步：调用OCR API进行文本识别")
+        # logger.info("=" * 50)
+        # ocr_token = os.getenv("OCR_TOKEN")
+        # ocr_processor = OCRProcessor(ocr_token, temp_dir)
+        # batch_id = ocr_processor.batch_process_folder(temp_dir)
+        # if not batch_id:
+        #     raise Exception("OCR处理失败")
+        # logger.info(f"✅ OCR处理完成，批次ID: {batch_id}")
+
+        # 2.调用qwen-vl-ocr的api进行图片的文字提取
         logger.info("\n" + "=" * 50)
-        logger.info("🤖 第二步：调用OCR API进行文本识别")
+        logger.info("🤖 第二步：调用OCR QWEN API进行文本识别")
         logger.info("=" * 50)
-        ocr_token = os.getenv("OCR_TOKEN")
-        ocr_processor = OCRProcessor(ocr_token, temp_dir)
-        batch_id = ocr_processor.batch_process_folder(temp_dir)
-        if not batch_id:
-            raise Exception("OCR处理失败")
-        logger.info(f"✅ OCR处理完成，批次ID: {batch_id}")
+
+        folder_path = temp_dir  # 替换为你的图片文件夹路径
+        json_path = os.path.join(temp_dir, "image_mapping.json")  # 使用temp_dir作为文件夹路径
+        API_KEY = os.getenv("QWEN_API_KEY")
+
+        # 执行批量处理
+        process_folder_with_mapping(folder_path, json_path, API_KEY)
 
         # 3. 翻译OCR识别结果（如果启用）
         if enable_translation:
