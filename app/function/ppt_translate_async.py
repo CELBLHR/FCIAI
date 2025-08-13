@@ -560,7 +560,8 @@ async def process_presentation_async(presentation_path: str,
                                    target_language: str,
                                    bilingual_translation: str,
                                    progress_callback,
-                                   model:str) -> bool:
+                                   model:str,
+                                   enable_text_splitting:bool) -> bool:
     """
     异步处理演示文稿（基于页面的翻译机制）
     每页调用一次API，按段落匹配翻译结果
@@ -722,7 +723,8 @@ async def process_presentation_async(presentation_path: str,
             from.image_ocr.ocr_controller import ocr_controller
             ocr_ppt_path= ocr_controller(uno_pptx_path,
                                         selected_pages=select_page,
-                                        output_path=None)
+                                        output_path=None,
+                                        enable_text_splitting=enable_text_splitting)
         except Exception as e:
             logger.error(f"使用ocr接口功能时出错: {str(e)}")
             ocr_ppt_path = uno_pptx_path
@@ -1016,6 +1018,7 @@ def process_presentation(presentation_path: str,
                        # 兼容性参数
                        stop_words: List[str] = None,
                        model:str='qwen',
+                       enable_text_splitting: bool = True,
                        **kwargs) -> bool:
     """
     处理PPT翻译（同步包装函数）
@@ -1063,7 +1066,8 @@ def process_presentation(presentation_path: str,
             target_language,
             bilingual_translation,
             progress_callback,
-            model
+            model,
+            enable_text_splitting
         )
 
         logger.info(f"演示文稿处理完成: {os.path.basename(presentation_path)}")
