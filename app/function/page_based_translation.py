@@ -408,9 +408,12 @@ class PageBasedTranslator:
                         try:
                             from .color_protection import safe_replace_paragraph_text
 
-                            if str(bilingual_translation) == "1":
-                                # 双语模式：原文 + 翻译
+                            if str(bilingual_translation) == "paragraph_up":
+                                # 双语模式：原文再上 + 译文在下
                                 new_text = para_info.text + "\n" + translation
+                            elif str(bilingual_translation) == "paragraph_down":
+                                # 双语模式：原文再下 + 译文在上
+                                new_text = translation + "\n" + para_info.text
                             else:
                                 # 仅翻译模式
                                 new_text = translation

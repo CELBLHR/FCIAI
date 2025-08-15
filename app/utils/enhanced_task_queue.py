@@ -60,6 +60,7 @@ class TranslationTask:
         self.select_page = select_page or []
         self.bilingual_translation = bilingual_translation
         self.model = model
+        self.enable_text_splitting = kwargs.get('enable_text_splitting', True)
 
         # PDF注释相关参数
         self.annotations = kwargs.get('annotations', [])
@@ -972,7 +973,8 @@ class EnhancedTranslationQueue:
                     target_language=task.target_language,
                     bilingual_translation=task.bilingual_translation,
                     progress_callback=progress_callback,
-                    model=task.model
+                    model=task.model,
+                    enable_text_splitting = task.enable_text_splitting
                 )
 
             return result
